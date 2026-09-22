@@ -25,6 +25,14 @@ import {
 
 const app = express()
 
+// Vercel puts every request through its own proxy, which sets
+// X-Forwarded-For to the real client IP. Without telling Express to trust
+// that header, express-rate-limit can't safely determine each caller's IP
+// (and logs a validation warning) — trusting exactly one hop is the
+// correct, safe setting for this deployment shape (Vercel's edge is the
+// only proxy in front of this function).
+app.set('trust proxy', 1)
+
 app.use(helmet())
 app.use(express.json({ limit: '1mb' }))
 
