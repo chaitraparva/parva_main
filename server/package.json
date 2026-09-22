@@ -1,0 +1,23 @@
+{
+  "name": "parva-realty-crm-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "seed": "node seed.js",
+    "migrate": "node -e \"import('node:fs').then(fs=>import('./src/db.js').then(async ({pool})=>{const sql=fs.readFileSync('./schema.sql','utf8'); await pool.query(sql); console.log('Schema applied.'); process.exit(0)}))\""
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^7.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.0"
+  }
+}

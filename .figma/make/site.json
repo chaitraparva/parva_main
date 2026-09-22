@@ -1,0 +1,11 @@
+{
+  "title": "Parva Group Portal",
+  "description": "Streamline real estate management with a luxurious CRM designed for agents and managers, enhancing lead tracking, performance analytics, and team collaboration.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
