@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type {
   Role, LeaveRequest, Employee, ExpenseClaim, PayrollRecord, AttendanceRecord,
   EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal,
   PerformanceReview, Notification,
 } from './types'
 import * as mockData from './data/mockData'
+import * as api from './lib/api'
+import type { Session } from './lib/api'
 import Login from './screens/Login'
 import Layout from './components/layout/Layout'
 
@@ -31,11 +33,11 @@ import MgmtPortal from './screens/management/MgmtPortal'
 import FinancePortal from './screens/finance/FinancePortal'
 
 const DEFAULT_SCREEN: Record<Role, string> = {
-  crm:        'my-portal',
-  manager:    'manager-portal',
-  hr:         'hr-dashboard',
+  crm: 'my-portal',
+  manager: 'manager-portal',
+  hr: 'hr-dashboard',
   management: 'mgmt-portal',
-  finance:    'finance-portal',
+  finance: 'finance-portal',
 }
 
 // Onboarding candidate as used across the (loosely-typed) Onboarding screens.
@@ -54,13 +56,19 @@ export default function App() {
   const [currentEmployeeId, setCurrentEmployeeId] = useState<string | null>(null)
   const [screen, setScreen] = useState('hr-dashboard')
   const [params, setParams] = useState<Record<string, string>>({})
+  // While we're checking for a stored session on first load, show nothing
+  // rather than flashing the sign-in screen for a moment before a valid
+  // session is restored.
+  const [checkingSession, setCheckingSession] = useState(true)
 
-  // Every entity the frontend renders is lifted here — this is the app's
-  // single source of truth, seeded straight from the demo dataset. This is
-  // a demo build: everything lives in memory for the session and nothing
-  // is persisted to a server, matching how the app worked before the
-  // backend experiment.
-  const [employees, setEmployees] = useState<Employee[]>(mockData.employees)
+  // The employee directory is real now — fetched from the live backend
+  // (Supabase via server/), not the demo dataset. Every other module below
+  // (leave, payroll, attendance, etc.) still runs on in-memory demo data for
+  // now; those each have a real generic CRUD API already built server-side
+  // (see server/src/routes/resources.js) but aren't wired up to the
+  // frontend yet — that's the next piece of work, not this one.
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [employeesLoaded, setEmployeesLoaded] = useState(false)
   const [leaves, setLeaves] = useState<LeaveRequest[]>(mockData.leaveRequests)
   const [expenses, setExpenses] = useState<ExpenseClaim[]>(mockData.expenseClaims)
   const [payroll, setPayroll] = useState<PayrollRecord[]>(mockData.payrollRecords)
@@ -87,15 +95,70 @@ export default function App() {
 
   const navigate = (s: string, p?: Record<string, string>) => { setScreen(s); setParams(p || {}) }
 
-  const handleLogin = (r: Role, employeeId: string) => {
-    setRole(r)
-    setCurrentEmployeeId(employeeId)
-    setScreen(DEFAULT_SCREEN[r])
+  // Applies a freshly-signed-in (or session-restored) employee into local
+  // state — merging into `employees` rather than replacing it wholesale,
+  // since the full directory fetch below might not have completed yet.
+  const applySession = (session: Session) => {
+    setRole(session.role)
+    setCurrentEmployeeId(session.employee.id)
+    setEmployees(prev => {
+      const exists = prev.some(e => e.id === session.employee.id)
+      return exists ? prev.map(e => e.id === session.employee.id ? session.employee : e) : [...prev, session.employee]
+    })
   }
 
-  const handleLogout = () => { setRole(null); setCurrentEmployeeId(null); setScreen('hr-dashboard') }
+  const handleLogin = (session: Session) => {
+    applySession(session)
+    setScreen(DEFAULT_SCREEN[session.role])
+  }
 
-  if (!role) return <Login onLogin={(r, employeeId) => handleLogin(r, employeeId)} employees={employees} />
+  const handleLogout = () => {
+    api.clearToken()
+    setRole(null)
+    setCurrentEmployeeId(null)
+    setEmployees([])
+    setEmployeesLoaded(false)
+    setScreen('hr-dashboard')
+  }
+
+  // On first load, try to restore a session from a previously-stored token
+  // (see src/lib/api.ts) so a page reload doesn't drop the user back to the
+  // sign-in screen.
+  useEffect(() => {
+    let cancelled = false
+      ; (async () => {
+        const session = await api.restoreSession()
+        if (cancelled) return
+        if (session) applySession(session)
+        setCheckingSession(false)
+      })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Once signed in, load the real employee directory from the backend —
+  // runs once per session (not on every render), and re-runs if the user
+  // logs out and a different person logs back in.
+  useEffect(() => {
+    if (!role || employeesLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const list = await api.fetchEmployees()
+          if (!cancelled) setEmployees(list)
+        } catch {
+          // Leave whatever's already in state (at minimum, the signed-in
+          // person from applySession) rather than blanking the screen.
+        } finally {
+          if (!cancelled) setEmployeesLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, employeesLoaded])
+
+  if (checkingSession) return null
+
+  if (!role) return <Login onLogin={handleLogin} />
 
   const unreadCount = notifications.filter(n => !n.read).length
   const sharedLeaveProps = { leaves, onLeaveUpdate }

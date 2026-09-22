@@ -4,6 +4,7 @@ import { Camera, IdCard, Mail, Phone, MapPin, Calendar, UserCog, Briefcase, Wall
 import DocumentsPanel from '../components/DocumentsPanel'
 import PayslipDocument from '../components/PayslipDocument'
 import { computePayslip } from '../lib/payslip'
+import * as api from '../lib/api'
 
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
@@ -69,25 +70,36 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
     reader.readAsDataURL(file)
   }
 
-  function handleSave() {
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
     if (!firstName.trim() || !lastName.trim()) {
       setError('First name and last name are required.')
       return
     }
     if (!me) return
-    const updated: Employee = {
-      ...me,
-      name: `${firstName.trim()} ${lastName.trim()}`.trim(),
-      // email is deliberately left untouched — it's the registered login
-      // identifier, set by HR and never editable by the employee.
-      phone: phone.trim(),
-      location: location.trim(),
-      photoUrl,
-    }
-    onEmployeesUpdate(employees.map(e => e.id === me.id ? updated : e))
+    const name = `${firstName.trim()} ${lastName.trim()}`.trim()
+    setSaving(true)
     setError('')
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    try {
+      // Persists to the real backend — name, phone and location only.
+      // email is deliberately never sent — it's the registered login
+      // identifier, set by HR and never editable by the employee (the
+      // server rejects it too, this just keeps the request honest).
+      // photoUrl isn't sent here yet: it can be a large data: URL from the
+      // file picker below, and photo storage needs its own upload-to-
+      // Supabase-Storage flow (like the Documents panel already has)
+      // rather than being stuffed into a text column — so for now the
+      // photo preview is local to this browser only, same as before.
+      const updated = await api.updateMyProfile({ name, phone: phone.trim(), location: location.trim() })
+      onEmployeesUpdate(employees.map(e => e.id === me.id ? { ...updated, photoUrl } : e))
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save your changes. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -205,10 +217,11 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
 
       <button
         onClick={handleSave}
-        className="px-6 py-2.5 rounded-lg text-sm font-semibold transition-all"
+        disabled={saving}
+        className="px-6 py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-70"
         style={{ backgroundColor: saved ? '#10B981' : navy, color: '#FAF8F5' }}
       >
-        {saved ? '✓ Profile updated' : 'Save Changes'}
+        {saved ? '✓ Profile updated' : saving ? 'Saving…' : 'Save Changes'}
       </button>
 
       {/* My Documents — every employee, regardless of role, can upload their
