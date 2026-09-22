@@ -5,7 +5,7 @@ import { verifyPassword, hashPassword, signToken, requireAuth } from '../auth.js
 import { toCamel } from '../lib/case.js'
 import { asyncHandler } from '../lib/async-handler.js'
 import { signResetToken, verifyResetToken } from '../lib/reset-token.js'
-import { findEmployeeById, isEligibleForRole } from '../lib/roster.js'
+import { findEmployeeById, findEmployeeByEmailAndRole, isEligibleForRole } from '../lib/roster.js'
 import { sendPasswordResetEmail } from '../lib/mailer.js'
 
 const router = Router()
@@ -73,12 +73,17 @@ router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
 
 // Returns the signed-in employee's own full profile — used on app load to
 // restore a session from a stored token without re-sending credentials.
+// Also echoes back loginRole (the one role this particular session is
+// scoped to, from the JWT) since a person can hold several login_roles —
+// the frontend needs to know which one they're currently acting as to
+// restore the right portal after a page reload, not just their full set of
+// eligible roles.
 router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM employees WHERE id = $1', [req.auth.employeeId])
   const employee = rows[0]
   if (!employee) return res.status(404).json({ error: 'Account not found.' })
   delete employee.password_hash
-  res.json({ employee: toCamel(employee) })
+  res.json({ employee: toCamel(employee), loginRole: req.auth.loginRole })
 }))
 
 // ─────────────────────── Forgot password ───────────────────────
@@ -100,18 +105,21 @@ const forgotPasswordLimiter = rateLimit({
 const RESET_LINK_BASE_URL = process.env.RESET_LINK_BASE_URL || process.env.FRONTEND_ORIGIN || 'http://localhost:5173'
 
 router.post('/forgot-password', forgotPasswordLimiter, asyncHandler(async (req, res) => {
-  const { employeeId, role } = req.body || {}
+  const { email, role } = req.body || {}
   const GENERIC_RESPONSE = { message: "If that account has a registered email on file, we've sent a password reset link to it." }
 
-  if (!employeeId || !role) {
-    return res.status(400).json({ error: 'Missing account or role.' })
+  if (!email || !role) {
+    return res.status(400).json({ error: 'Missing email or role.' })
   }
 
-  const employee = findEmployeeById(employeeId)
+  // Looked up by email+role, the same way /login is — the frontend never
+  // needs to know (or send) an employeeId before the person has proven
+  // they control the registered email.
+  const employee = await findEmployeeByEmailAndRole(email, role)
 
   // Same generic response whether or not the account/role/email actually
-  // checks out, so this endpoint can't be used to probe which employee IDs
-  // or roles are valid.
+  // checks out, so this endpoint can't be used to probe which emails or
+  // roles are valid.
   if (!employee || !isEligibleForRole(employee, role) || !employee.email) {
     return res.json(GENERIC_RESPONSE)
   }
@@ -140,7 +148,7 @@ router.post('/verify-reset-token', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one from the sign-in page.' })
   }
 
-  const employee = findEmployeeById(result.employeeId)
+  const employee = await findEmployeeById(result.employeeId)
   if (!employee || !isEligibleForRole(employee, result.role)) {
     return res.status(400).json({ error: 'This reset link is no longer valid.' })
   }
@@ -180,7 +188,7 @@ router.post('/set-password', setPasswordLimiter, asyncHandler(async (req, res) =
   // it), but re-checking here costs nothing and means a roster change
   // (someone's role revoked) takes effect immediately, not just at the
   // next login.
-  const rosterEmployee = findEmployeeById(result.employeeId)
+  const rosterEmployee = await findEmployeeById(result.employeeId)
   if (!rosterEmployee || !isEligibleForRole(rosterEmployee, result.role)) {
     return res.status(400).json({ error: 'This reset link is no longer valid.' })
   }
