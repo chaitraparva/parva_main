@@ -4,9 +4,9 @@ import { pool } from '../db.js'
 import { verifyPassword, hashPassword, signToken, requireAuth } from '../auth.js'
 import { toCamel } from '../lib/case.js'
 import { asyncHandler } from '../lib/async-handler.js'
-import { signResetToken, verifyResetToken } from '../lib/reset-token.js'
+import { verifyResetToken } from '../lib/reset-token.js'
 import { findEmployeeById, findEmployeeByEmailAndRole, isEligibleForRole } from '../lib/roster.js'
-import { sendPasswordResetEmail } from '../lib/mailer.js'
+import { getSupabaseAdmin } from '../lib/supabase-admin.js'
 
 const router = Router()
 
@@ -87,12 +87,12 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
 }))
 
 // ─────────────────────── Forgot password ───────────────────────
-// Deliberately independent of Postgres/JWT (see server/src/lib/reset-token.js)
-// so it works today even before the rest of this backend is connected. All
-// this proves is "the requester controls the email address on file" — the
-// frontend still applies the resulting new password the same way it
-// already does. Rate-limited harder than general login attempts, since
-// each request also costs a real email send.
+// Sent through Supabase's own mailer (auth.resetPasswordForEmail) instead
+// of a custom emailer — Supabase only sends the email if that address has
+// a matching Supabase Auth user, which is what server/src/routes/admin.js's
+// /sync-auth-users one-time setup creates for every employee. Rate-limited
+// harder than general login attempts, since each request also costs a real
+// email send.
 const forgotPasswordLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
@@ -101,7 +101,9 @@ const forgotPasswordLimiter = rateLimit({
   message: { error: 'Too many reset requests. Please wait a few minutes and try again.' },
 })
 
-// Where the reset link should point — the deployed frontend's own origin.
+// Where Supabase's reset link should send people back to — the deployed
+// frontend's own origin. Must also be added to Supabase's Authentication →
+// URL Configuration → Redirect URLs allow-list, or Supabase will refuse it.
 const RESET_LINK_BASE_URL = process.env.RESET_LINK_BASE_URL || process.env.FRONTEND_ORIGIN || 'http://localhost:5173'
 
 router.post('/forgot-password', forgotPasswordLimiter, asyncHandler(async (req, res) => {
@@ -124,18 +126,74 @@ router.post('/forgot-password', forgotPasswordLimiter, asyncHandler(async (req, 
     return res.json(GENERIC_RESPONSE)
   }
 
-  const token = signResetToken(employee.id, role)
-  const resetUrl = `${RESET_LINK_BASE_URL}/?resetToken=${encodeURIComponent(token)}`
-
   try {
-    await sendPasswordResetEmail({ to: employee.email, name: employee.name, resetUrl })
+    const { error } = await getSupabaseAdmin().auth.resetPasswordForEmail(employee.email, {
+      redirectTo: RESET_LINK_BASE_URL,
+    })
+    if (error) throw error
   } catch (err) {
-    console.error('forgot-password: failed to send email for', employee.id, err)
+    console.error('forgot-password: Supabase failed to send email for', employee.id, err)
     // Still return the generic response — don't leak send failures to the
     // client, and don't let a broken mail provider reveal account existence.
   }
 
   res.json(GENERIC_RESPONSE)
+}))
+
+// ─────────────── Finishing the Supabase-hosted reset ───────────────
+// Supabase's email links back to RESET_LINK_BASE_URL with its own
+// access_token in the URL (a #fragment, not a ?query param — see
+// src/screens/Login.tsx). The frontend exchanges that for a Supabase
+// session client-side, then calls this endpoint with the resulting access
+// token: we verify it's genuine with Supabase (proving this really is that
+// employee's email), then save the new password into OUR OWN employees
+// table — password_hash here is what /login actually checks, so Supabase
+// is only ever used to prove "this person controls this email" and to send
+// the email; it never becomes the system of record for the password.
+const syncPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
+})
+
+router.post('/sync-password', syncPasswordLimiter, asyncHandler(async (req, res) => {
+  const { accessToken, newPassword } = req.body || {}
+
+  if (!accessToken) {
+    return res.status(400).json({ error: 'Missing reset link details — request a new one from the sign-in page.' })
+  }
+  if (!newPassword || String(newPassword).length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' })
+  }
+
+  const { data, error } = await getSupabaseAdmin().auth.getUser(accessToken)
+  if (error || !data?.user?.email) {
+    return res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one from the sign-in page.' })
+  }
+
+  const email = data.user.email.toLowerCase()
+  const { rows } = await pool.query(
+    `SELECT id, name FROM employees WHERE lower(email) = $1 AND status = 'active'`,
+    [email],
+  )
+  const employee = rows[0]
+  if (!employee) {
+    return res.status(404).json({ error: 'No active account is registered to this email.' })
+  }
+
+  const passwordHash = await hashPassword(String(newPassword))
+  await pool.query(
+    `UPDATE employees SET password_hash = $1, updated_at = now() WHERE id = $2`,
+    [passwordHash, employee.id],
+  )
+
+  // No JWT here — the frontend doesn't know which of this person's roles
+  // (if they have more than one) they meant to sign in as, so it sends them
+  // back to the ordinary sign-in screen to pick a role and use the new
+  // password, same as anyone else.
+  res.json({ success: true, name: employee.name })
 }))
 
 // Called when the app loads with ?resetToken=... in the URL, before showing

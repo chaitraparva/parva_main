@@ -6,6 +6,7 @@ import 'dotenv/config'
 
 import authRouter from './routes/auth.js'
 import publicRouter from './routes/public.js'
+import adminRouter from './routes/admin.js'
 import employeesRouter from './routes/employees.js'
 import documentsRouter from './routes/documents.js'
 import {
@@ -49,6 +50,7 @@ app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.use('/api/auth', authRouter)
 app.use('/api/public', publicRouter)
+app.use('/api/admin', adminRouter)
 app.use('/api/employees', employeesRouter)
 app.use('/api/documents', documentsRouter)
 app.use('/api/leave-requests', leaveRequestsRouter)

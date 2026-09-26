@@ -133,24 +133,18 @@ export async function requestPasswordReset(email: string, role: Role): Promise<v
   })
 }
 
-export async function verifyResetToken(token: string): Promise<{ employeeId: string; name: string; role: Role }> {
-  return request('/api/auth/verify-reset-token', {
+// Finishes a Supabase-hosted password reset (see Login.tsx and
+// server/src/routes/auth.js's /sync-password) — accessToken here is the one
+// Supabase put in the URL after the person clicked the emailed link, proving
+// they control that email. Saves the new password into our own employees
+// table (what /login actually checks) and returns just their name — no
+// session token, since we deliberately don't know which of their roles they
+// meant to sign in as; they pick that on the ordinary sign-in screen next.
+export async function syncPasswordFromSupabase(accessToken: string, newPassword: string): Promise<{ name: string }> {
+  return request('/api/auth/sync-password', {
     method: 'POST',
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ accessToken, newPassword }),
   })
-}
-
-// Sets a new password using a signed reset-link token (from either a
-// first-time setup email or a forgot-password email — same endpoint, see
-// server/src/routes/auth.js) and signs the person straight in.
-export async function setPassword(token: string, newPassword: string): Promise<Session> {
-  const data = await request<{ token: string; employee: any }>('/api/auth/set-password', {
-    method: 'POST',
-    body: JSON.stringify({ token, newPassword }),
-  })
-  setToken(data.token)
-  const employee = await fetchEmployeeById(data.employee.id)
-  return { role: data.employee.loginRole, employee }
 }
 
 // A few aggregate counts shown on the sign-in screen, before anyone's

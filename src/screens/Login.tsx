@@ -71,13 +71,13 @@ const HIERARCHY = [
 // nothing useful to pre-check client-side before submitting). First-time
 // users use "Forgot / first time?" the same as a password reset — both are
 // just "prove you control the registered email, then set a password."
-type Step = 'sign-in' | 'reset-sent' | 'reset-password' | 'reset-invalid'
+type Step = 'sign-in' | 'reset-sent' | 'reset-password' | 'reset-invalid' | 'reset-done'
 
 export default function Login({ onLogin }: { onLogin: (session: Session) => void }) {
   const [selected, setSelected] = useState<Role>('crm')
   const [step, setStep] = useState<Step>('sign-in')
-  const [resetIdentity, setResetIdentity] = useState<{ name: string; email: string } | null>(null)
-  const [resetToken, setResetToken] = useState('')
+  const [resetName, setResetName] = useState('')
+  const [supabaseAccessToken, setSupabaseAccessToken] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -96,28 +96,31 @@ export default function Login({ onLogin }: { onLogin: (session: Session) => void
     return () => { cancelled = true }
   }, [])
 
-  // If the page was opened from a "Reset your password" (or "set up your
-  // account") email link (?resetToken=...), verify it with the server
-  // before showing anything sensitive — only a genuine, unexpired token
-  // gets past this. Runs once on mount.
+  // If the page was opened from Supabase's "Reset your password" email, the
+  // link comes back as a URL #fragment (not a ?query param) —
+  // #access_token=...&type=recovery=... — because that's how Supabase's own
+  // auth links work. We just need to hand that access_token to our own
+  // backend (server/src/routes/auth.js's /sync-password), which verifies it
+  // directly with Supabase and saves the new password into our employees
+  // table — nothing here needs its own Supabase session. Runs once on mount.
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get('resetToken')
-    if (!token) return
+    const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash
+    const params = new URLSearchParams(hash)
+    const accessToken = params.get('access_token')
+    const type = params.get('type')
+    const hashError = params.get('error_description')
+
+    if (!accessToken && !hashError) return
     window.history.replaceState({}, '', window.location.pathname)
 
-      ; (async () => {
-        try {
-          const result = await api.verifyResetToken(token)
-          setResetIdentity({ name: result.name, email: '' })
-          setResetToken(token)
-          setSelected(result.role)
-          setStep('reset-password')
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'This reset link is invalid or has expired.')
-          setStep('reset-invalid')
-        }
-      })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (hashError || type !== 'recovery' || !accessToken) {
+      setError(hashError ? hashError.replace(/\+/g, ' ') : 'This reset link is invalid or has expired.')
+      setStep('reset-invalid')
+      return
+    }
+
+    setSupabaseAccessToken(accessToken)
+    setStep('reset-password')
   }, [])
 
   const card = ROLE_CARDS.find(r => r.role === selected)!
@@ -129,8 +132,8 @@ export default function Login({ onLogin }: { onLogin: (session: Session) => void
 
   const resetToSignIn = () => {
     setStep('sign-in')
-    setResetIdentity(null)
-    setResetToken('')
+    setResetName('')
+    setSupabaseAccessToken('')
     setPassword('')
     setNewPassword('')
     setConfirmPassword('')
@@ -194,8 +197,9 @@ export default function Login({ onLogin }: { onLogin: (session: Session) => void
     }
     setLoading(true)
     try {
-      const session = await api.setPassword(resetToken, newPassword)
-      onLogin(session)
+      const result = await api.syncPasswordFromSupabase(supabaseAccessToken, newPassword)
+      setResetName(result.name)
+      setStep('reset-done')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'This reset link is invalid or has expired. Request a new one from the sign-in page.')
     } finally {
@@ -373,14 +377,14 @@ export default function Login({ onLogin }: { onLogin: (session: Session) => void
             </>
           )}
 
-          {step === 'reset-password' && resetIdentity && (
+          {step === 'reset-password' && (
             <>
               <button onClick={resetToSignIn} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-6 transition-colors">
                 <ArrowLeft size={13} /> Change email or role
               </button>
               <div className="mb-8">
                 <h1 className="font-serif text-3xl font-semibold text-foreground mb-1.5">Set your password</h1>
-                <p className="text-sm text-muted-foreground">Choose a password for {resetIdentity.name.split(' ')[0]}'s account</p>
+                <p className="text-sm text-muted-foreground">Choose a new password for your account</p>
               </div>
 
               <div className="mb-4">
@@ -418,6 +422,22 @@ export default function Login({ onLogin }: { onLogin: (session: Session) => void
               <p className="text-center text-xs text-muted-foreground mt-5">
                 You're here because you clicked the link we emailed you — go ahead and set your password.
               </p>
+            </>
+          )}
+
+          {step === 'reset-done' && (
+            <>
+              <div className="mb-8">
+                <h1 className="font-serif text-3xl font-semibold text-foreground mb-1.5">Password set</h1>
+                <p className="text-sm text-muted-foreground">
+                  {resetName ? `${resetName.split(' ')[0]}, your` : 'Your'} password has been updated. Sign in below with your new password.
+                </p>
+              </div>
+              <button onClick={resetToSignIn}
+                className="w-full py-3 rounded-xl text-sm font-semibold transition-all"
+                style={{ backgroundColor: '#1C2B4A', color: '#FAF8F5' }}>
+                Back to sign in
+              </button>
             </>
           )}
         </div>
