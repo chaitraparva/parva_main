@@ -114,6 +114,15 @@ CREATE TABLE payroll_records (
   admin_approved   BOOLEAN NOT NULL DEFAULT false,
   disbursed_at     TIMESTAMPTZ,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- The exact pay-cycle window and per-cycle discretionary amounts the
+  -- "Generate Payslip" flow computes (see server/sql/03_payroll_payslip_
+  -- fields_migration.sql for the migration that added these to an
+  -- already-created table).
+  period_start     DATE,
+  period_end       DATE,
+  reimbursements   NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  bonus            NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  other_deductions NUMERIC(12, 2) NOT NULL DEFAULT 0,
   UNIQUE (employee_id, month)
 );
 

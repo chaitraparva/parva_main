@@ -19,6 +19,7 @@ export const payrollRecordsRouter = crudRouter({
   allowedColumns: [
     'employeeId', 'month', 'baseSalary', 'incentives', 'deductions', 'netPay',
     'status', 'managerApproved', 'hrProcessed', 'adminApproved', 'disbursedAt',
+    'periodStart', 'periodEnd', 'reimbursements', 'bonus', 'otherDeductions',
   ],
   writeRoles: ['manager', 'hr', 'management', 'finance'],
 })
