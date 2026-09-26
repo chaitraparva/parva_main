@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit'
 import 'dotenv/config'
 
 import authRouter from './routes/auth.js'
+import publicRouter from './routes/public.js'
 import employeesRouter from './routes/employees.js'
 import documentsRouter from './routes/documents.js'
 import {
@@ -47,6 +48,7 @@ app.use(rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, lega
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.use('/api/auth', authRouter)
+app.use('/api/public', publicRouter)
 app.use('/api/employees', employeesRouter)
 app.use('/api/documents', documentsRouter)
 app.use('/api/leave-requests', leaveRequestsRouter)

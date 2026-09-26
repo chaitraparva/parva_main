@@ -152,3 +152,16 @@ export async function setPassword(token: string, newPassword: string): Promise<S
   const employee = await fetchEmployeeById(data.employee.id)
   return { role: data.employee.loginRole, employee }
 }
+
+// A few aggregate counts shown on the sign-in screen, before anyone's
+// authenticated — no auth token needed (see server/src/routes/public.js).
+export interface PublicStats {
+  employees: number
+  companies: number
+  openTickets: number
+  activeExits: number
+}
+
+export async function fetchPublicStats(): Promise<PublicStats> {
+  return request<PublicStats>('/api/public/stats', { method: 'GET' })
+}

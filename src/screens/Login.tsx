@@ -85,6 +85,16 @@ export default function Login({ onLogin }: { onLogin: (session: Session) => void
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [forgotLoading, setForgotLoading] = useState(false)
+  const [stats, setStats] = useState<api.PublicStats | null>(null)
+
+  // A handful of live counts for the left panel — fetched once on mount, no
+  // sign-in required (see server/src/routes/public.js). Failing silently is
+  // fine here; the tiles just don't render rather than blocking sign-in.
+  useEffect(() => {
+    let cancelled = false
+    api.fetchPublicStats().then(s => { if (!cancelled) setStats(s) }).catch(() => { })
+    return () => { cancelled = true }
+  }, [])
 
   // If the page was opened from a "Reset your password" (or "set up your
   // account") email link (?resetToken=...), verify it with the server
@@ -235,6 +245,22 @@ export default function Login({ onLogin }: { onLogin: (session: Session) => void
               ))}
             </div>
           </div>
+
+          {stats && (
+            <div className="grid grid-cols-2 gap-3 mt-auto">
+              {[
+                { label: 'Employees', value: stats.employees },
+                { label: 'Companies', value: stats.companies },
+                { label: 'Open Tickets', value: stats.openTickets },
+                { label: 'Active Exits', value: stats.activeExits },
+              ].map(tile => (
+                <div key={tile.label} className="rounded-xl p-4" style={{ backgroundColor: 'rgba(250,248,245,0.06)' }}>
+                  <p className="font-serif text-2xl font-semibold" style={{ color: '#C9A96E' }}>{tile.value}</p>
+                  <p className="text-xs" style={{ color: 'rgba(250,248,245,0.55)' }}>{tile.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
