@@ -8,7 +8,7 @@
 // the user back to the sign-in screen — see restoreSession() below, called
 // once from App.tsx on mount.
 
-import type { Employee, Role } from '../types'
+import type { Employee, Role, LeaveRequest } from '../types'
 
 const TOKEN_KEY = 'parva_auth_token'
 
@@ -158,4 +158,54 @@ export interface PublicStats {
 
 export async function fetchPublicStats(): Promise<PublicStats> {
   return request<PublicStats>('/api/public/stats', { method: 'GET' })
+}
+
+// ─────────────────────── Leave requests ───────────────────────
+// The backend's leave_requests table (server/src/routes/resources.js, a
+// generic CRUD router) only stores employee_id — not the employee's name or
+// department, which the frontend's LeaveRequest type wants for display.
+// App.tsx fills those in from the already-loaded employee directory, so the
+// raw shape here is LeaveRequest minus those two fields, plus whatever's
+// left after that substitution stays the same. startDate/endDate/appliedOn
+// come back from Postgres as full timestamps (DATE/TIMESTAMPTZ columns
+// serialize through JSON as ISO strings) — App.tsx trims those to
+// YYYY-MM-DD before use.
+export type RawLeaveRequest = Omit<LeaveRequest, 'employeeName' | 'department'> & {
+  decidedBy?: string | null
+  decidedAt?: string | null
+}
+
+export async function fetchLeaveRequests(): Promise<RawLeaveRequest[]> {
+  const data = await request<{ leave_requests: RawLeaveRequest[] }>('/api/leave-requests', { method: 'GET' })
+  return data.leave_requests
+}
+
+export interface NewLeaveRequestInput {
+  employeeId: string
+  type: LeaveRequest['type']
+  startDate: string
+  endDate: string
+  days: number
+  reason: string
+  submittedByRole: Role
+  pendingWith: Role | 'done'
+}
+
+export async function createLeaveRequest(input: NewLeaveRequestInput): Promise<RawLeaveRequest> {
+  const data = await request<{ leave_request: RawLeaveRequest }>('/api/leave-requests', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.leave_request
+}
+
+export async function updateLeaveRequest(
+  id: string,
+  patch: Partial<Pick<RawLeaveRequest, 'status' | 'pendingWith' | 'decidedBy' | 'decidedAt'>>,
+): Promise<RawLeaveRequest> {
+  const data = await request<{ leave_request: RawLeaveRequest }>(`/api/leave-requests/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.leave_request
 }

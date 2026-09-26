@@ -40,6 +40,13 @@ const DEFAULT_SCREEN: Record<Role, string> = {
   finance: 'finance-portal',
 }
 
+// Postgres DATE/TIMESTAMPTZ columns serialize through JSON as full ISO
+// strings (e.g. "2026-01-15T00:00:00.000Z") — trimmed to the plain
+// YYYY-MM-DD the frontend displays and stores everywhere else.
+function toDateOnly(value: string | null | undefined): string {
+  return value ? String(value).slice(0, 10) : ''
+}
+
 // Onboarding candidate as used across the (loosely-typed) Onboarding screens.
 interface OnboardingCandidate {
   id: string
@@ -69,7 +76,11 @@ export default function App() {
   // frontend yet — that's the next piece of work, not this one.
   const [employees, setEmployees] = useState<Employee[]>([])
   const [employeesLoaded, setEmployeesLoaded] = useState(false)
-  const [leaves, setLeaves] = useState<LeaveRequest[]>(mockData.leaveRequests)
+  // Leave requests are real now too — see rawLeaves/leaves below. Every
+  // other module still runs on in-memory demo data (currently empty
+  // arrays; nothing invented to fill it back in) for now.
+  const [rawLeaves, setRawLeaves] = useState<api.RawLeaveRequest[]>([])
+  const [leavesLoaded, setLeavesLoaded] = useState(false)
   const [expenses, setExpenses] = useState<ExpenseClaim[]>(mockData.expenseClaims)
   const [payroll, setPayroll] = useState<PayrollRecord[]>(mockData.payrollRecords)
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(mockData.attendanceRecords)
@@ -83,7 +94,72 @@ export default function App() {
   const [notifications, setNotifications] = useState<Notification[]>(mockData.notifications)
 
   const onEmployeesUpdate = (next: Employee[]) => { setEmployees(next) }
-  const onLeaveUpdate = (next: LeaveRequest[]) => { setLeaves(next) }
+
+  // `leaves` (below, derived from rawLeaves) is what every screen actually
+  // reads and writes via this same onLeaveUpdate prop they already had — no
+  // screen needed to change. It diffs the new array against the current
+  // one: rows with an id that didn't exist before are new applications
+  // (POST), rows whose status/pendingWith changed are approve/reject
+  // decisions (PATCH); everything else is left alone. The optimistic
+  // setRawLeaves below makes the change visible immediately, then a re-fetch
+  // once the server calls settle replaces temp ids/timestamps with the real
+  // stored values (or reverts if a call failed).
+  const onLeaveUpdate = (next: LeaveRequest[]) => {
+    const prevById = new Map(leaves.map(l => [l.id, l]))
+    const created = next.filter(l => !prevById.has(l.id))
+    const updated = next.filter(l => {
+      const prev = prevById.get(l.id)
+      return prev && (prev.status !== l.status || prev.pendingWith !== l.pendingWith)
+    })
+
+    setRawLeaves(next.map(l => ({
+      id: l.id,
+      employeeId: l.employeeId,
+      type: l.type,
+      startDate: l.startDate,
+      endDate: l.endDate,
+      days: l.days,
+      reason: l.reason,
+      status: l.status,
+      submittedByRole: l.submittedByRole,
+      pendingWith: l.pendingWith,
+      appliedOn: l.appliedOn,
+    })))
+
+      ; (async () => {
+        try {
+          for (const l of created) {
+            await api.createLeaveRequest({
+              employeeId: l.employeeId,
+              type: l.type,
+              startDate: l.startDate,
+              endDate: l.endDate,
+              days: l.days,
+              reason: l.reason,
+              submittedByRole: l.submittedByRole,
+              pendingWith: l.pendingWith,
+            })
+          }
+          for (const l of updated) {
+            await api.updateLeaveRequest(l.id, {
+              status: l.status,
+              pendingWith: l.pendingWith,
+              decidedBy: currentEmployeeId || undefined,
+              decidedAt: new Date().toISOString(),
+            })
+          }
+        } catch (err) {
+          console.error('Failed to save a leave request change to the server', err)
+        } finally {
+          try {
+            setRawLeaves(await api.fetchLeaveRequests())
+          } catch {
+            // Offline/unreachable — stay on the optimistic state rather than
+            // blanking the screen.
+          }
+        }
+      })()
+  }
   const onExpensesUpdate = (next: ExpenseClaim[]) => { setExpenses(next) }
   const onPayrollUpdate = (next: PayrollRecord[]) => { setPayroll(next) }
   const onAttendanceUpdate = (next: AttendanceRecord[]) => { setAttendance(next) }
@@ -118,6 +194,8 @@ export default function App() {
     setCurrentEmployeeId(null)
     setEmployees([])
     setEmployeesLoaded(false)
+    setRawLeaves([])
+    setLeavesLoaded(false)
     setScreen('hr-dashboard')
   }
 
@@ -156,9 +234,44 @@ export default function App() {
     return () => { cancelled = true }
   }, [role, employeesLoaded])
 
+  // Same pattern, for leave requests (server/src/routes/resources.js's
+  // generic CRUD router over leave_requests).
+  useEffect(() => {
+    if (!role || leavesLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchLeaveRequests()
+          if (!cancelled) setRawLeaves(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setLeavesLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, leavesLoaded])
+
   if (checkingSession) return null
 
   if (!role) return <Login onLogin={handleLogin} />
+
+  // The employee directory has each row's name/department, which the raw
+  // leave_requests rows from the backend don't store (see api.ts) — filled
+  // in here since this is the one place both are already loaded.
+  const leaves: LeaveRequest[] = rawLeaves.map(r => {
+    const emp = employees.find(e => e.id === r.employeeId)
+    return {
+      ...r,
+      id: String(r.id),
+      employeeName: emp?.name || 'Unknown',
+      department: emp?.department || '',
+      startDate: toDateOnly(r.startDate),
+      endDate: toDateOnly(r.endDate),
+      appliedOn: toDateOnly(r.appliedOn),
+      days: Number(r.days),
+    }
+  })
 
   const unreadCount = notifications.filter(n => !n.read).length
   const sharedLeaveProps = { leaves, onLeaveUpdate }
