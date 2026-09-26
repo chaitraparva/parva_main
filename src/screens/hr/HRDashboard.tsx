@@ -28,7 +28,8 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
   const urgentTickets = tickets.filter(t => t.priority === 'Urgent' && t.status !== 'Resolved' && t.status !== 'Closed')
   const activeOnboarding = onboarding.filter(c => c.onboardingProgress < 100).length
   const activeExits = exits.filter(e => e.status !== 'Completed').length
-  const todayAttendance = attendance.filter(a => a.date === '2024-08-14')
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayAttendance = attendance.filter(a => a.date === todayIso)
   const presentToday = todayAttendance.filter(a => a.status === 'present').length
 
   const QUICK_ACTIONS = [
@@ -160,13 +161,22 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
             <h3 className="font-serif text-base font-semibold text-foreground">Payroll Cycle</h3>
             <button onClick={() => navigate('payroll-hr')} className="text-xs font-medium" style={{ color: gold }}>View all →</button>
           </div>
-          <p className="text-xs text-muted-foreground mb-3">August 2024 · Stage 2 of 3</p>
-          {/* Stage bar */}
+          <p className="text-xs text-muted-foreground mb-3">
+            {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+            {payroll.length > 0 ? ` · ${pendingPayroll} pending HR action` : ' · No payroll records yet'}
+          </p>
+          {/* Stage bar — lit up per stage based on whether any real record is
+              currently sitting there, not a fixed "we're always at stage 2". */}
           <div className="flex items-center gap-1 mb-4">
-            {['Manager', 'HR', 'Admin', 'Disbursed'].map((stage, i) => (
+            {([
+              ['Manager', payroll.some(p => p.status === 'pending-manager')],
+              ['HR', payroll.some(p => p.status === 'pending-hr')],
+              ['Admin', payroll.some(p => p.status === 'pending-management')],
+              ['Disbursed', payroll.some(p => p.status === 'disbursed')],
+            ] as [string, boolean][]).map(([stage, active]) => (
               <div key={stage} className="flex-1 flex flex-col items-center gap-1">
-                <div className="h-2 w-full rounded-full" style={{ backgroundColor: i <= 1 ? navy : '#E5DFD5' }} />
-                <span className="text-[9px] font-medium" style={{ color: i <= 1 ? navy : '#9CA3AF' }}>{stage}</span>
+                <div className="h-2 w-full rounded-full" style={{ backgroundColor: active ? navy : '#E5DFD5' }} />
+                <span className="text-[9px] font-medium" style={{ color: active ? navy : '#9CA3AF' }}>{stage}</span>
               </div>
             ))}
           </div>

@@ -260,7 +260,7 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Pending HR Action', value: pendingHRCount, note: 'Records to process', color: '#D97706' },
-          { label: 'Total Org Payout', value: `₹${(totalPayout / 100000).toFixed(1)}L`, note: 'Gross Aug 2024', color: navy },
+          { label: 'Total Org Payout', value: `₹${(totalPayout / 100000).toFixed(1)}L`, note: 'Gross, all cycles', color: navy },
           { label: 'Disbursed', value: `₹${(disbursedPayout / 100000).toFixed(1)}L`, note: `${records.filter(r => r.status === 'disbursed').length} employees`, color: '#059669' },
           { label: 'Avg Net Pay', value: `₹${(records.length ? Math.round(totalPayout / records.length) : 0).toLocaleString('en-IN')}`, note: 'Per employee', color: '#7C3AED' },
         ].map(s => (
@@ -303,66 +303,66 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
           </div>
 
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px]">
-            <thead>
-              <tr className="border-b border-border bg-muted/20">
-                {['Employee', 'Base Salary', 'Incentives', 'Deductions', 'Net Pay', 'Status', 'Action'].map(h => (
-                  <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(rec => {
-                const sc = statusColor[rec.status]
-                const isProc = processing.has(rec.id)
-                return (
-                  <tr key={rec.id}
-                    className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors cursor-pointer"
-                    onClick={() => setSelected(selected?.id === rec.id ? null : rec)}>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
-                          style={{ backgroundColor: `${navy}14`, color: navy }}>
-                          {rec.employeeName.split(' ').map(n => n[0]).join('')}
+            <table className="w-full min-w-[640px]">
+              <thead>
+                <tr className="border-b border-border bg-muted/20">
+                  {['Employee', 'Base Salary', 'Incentives', 'Deductions', 'Net Pay', 'Status', 'Action'].map(h => (
+                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(rec => {
+                  const sc = statusColor[rec.status]
+                  const isProc = processing.has(rec.id)
+                  return (
+                    <tr key={rec.id}
+                      className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors cursor-pointer"
+                      onClick={() => setSelected(selected?.id === rec.id ? null : rec)}>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                            style={{ backgroundColor: `${navy}14`, color: navy }}>
+                            {rec.employeeName.split(' ').map(n => n[0]).join('')}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">{rec.employeeName}</p>
+                            <p className="text-xs text-muted-foreground capitalize">{rec.role}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">{rec.employeeName}</p>
-                          <p className="text-xs text-muted-foreground capitalize">{rec.role}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 text-sm text-foreground">₹{rec.baseSalary.toLocaleString('en-IN')}</td>
-                    <td className="px-5 py-4 text-sm font-medium" style={{ color: '#059669' }}>+₹{rec.incentives.toLocaleString('en-IN')}</td>
-                    <td className="px-5 py-4 text-sm font-medium" style={{ color: '#DC2626' }}>−₹{rec.deductions.toLocaleString('en-IN')}</td>
-                    <td className="px-5 py-4">
-                      <p className="text-sm font-bold text-foreground">₹{rec.netPay.toLocaleString('en-IN')}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap"
-                        style={{ backgroundColor: sc.bg, color: sc.text }}>
-                        {statusLabel[rec.status]}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4" onClick={e => e.stopPropagation()}>
-                      {rec.status === 'pending-hr' ? (
-                        <button onClick={() => doProcess(rec.id)} disabled={isProc}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-90 disabled:opacity-60"
-                          style={{ backgroundColor: gold, color: navy }}>
-                          <CreditCard size={12} />
-                          {isProc ? 'Processing…' : 'Process'}
-                        </button>
-                      ) : (
-                        <button className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={() => setSelected(selected?.id === rec.id ? null : rec)}>
-                          <ChevronRight size={16} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-foreground">₹{rec.baseSalary.toLocaleString('en-IN')}</td>
+                      <td className="px-5 py-4 text-sm font-medium" style={{ color: '#059669' }}>+₹{rec.incentives.toLocaleString('en-IN')}</td>
+                      <td className="px-5 py-4 text-sm font-medium" style={{ color: '#DC2626' }}>−₹{rec.deductions.toLocaleString('en-IN')}</td>
+                      <td className="px-5 py-4">
+                        <p className="text-sm font-bold text-foreground">₹{rec.netPay.toLocaleString('en-IN')}</p>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap"
+                          style={{ backgroundColor: sc.bg, color: sc.text }}>
+                          {statusLabel[rec.status]}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4" onClick={e => e.stopPropagation()}>
+                        {rec.status === 'pending-hr' ? (
+                          <button onClick={() => doProcess(rec.id)} disabled={isProc}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-90 disabled:opacity-60"
+                            style={{ backgroundColor: gold, color: navy }}>
+                            <CreditCard size={12} />
+                            {isProc ? 'Processing…' : 'Process'}
+                          </button>
+                        ) : (
+                          <button className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={() => setSelected(selected?.id === rec.id ? null : rec)}>
+                            <ChevronRight size={16} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
 

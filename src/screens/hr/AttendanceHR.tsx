@@ -18,15 +18,8 @@ type AttStatus = 'present' | 'absent' | 'late' | 'half-day'
 // excluded from this screen's employee picker and log entirely.
 const ATTENDANCE_EXCLUDED_IDS = ['DF230001', 'DF230002', 'PA230045'] // Neelesh H P, Akshita Raturi, Chaitra
 
-// Deterministic attendance rates for heatmap (day of month → rate bucket)
-const HEATMAP_SEED = [
-  1, 1, 1, 0, 1, 1, 1, 0, 1, 0,
-  1, 1, 2, 1, 1, 0, 0, 1, 1, 2,
-  1, 1, 1, 0, 1, 1, 1, 0, 1, 1,
-  1,
-]
-// 0 = good (≥85%), 1 = mid (70-84%), 2 = low (<70%)
-
+// Heatmap day-rate buckets: 0 = good (≥85%), 1 = mid (70-84%), 2 = low (<70%)
+// — computed live from real attendance records below, not seeded/hardcoded.
 const HEATMAP_COLORS = [
   { bg: '#D1FAE5', text: '#065F46' },
   { bg: '#FEF3C7', text: '#92400E' },
@@ -98,8 +91,17 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
     return `${h.toFixed(1)} hrs`
   }
 
-  // Aug 2024: 1st is Thursday (weekday index 3)
-  const AUG_START_DOW = 3 // 0=Mon, Thu=3
+  // Heatmap: the current calendar month, computed live from real attendance
+  // records (not a fixed/seeded month — see the Heatmap section below).
+  const heatmapNow = new Date()
+  const heatmapYear = heatmapNow.getFullYear()
+  const heatmapMonthIndex = heatmapNow.getMonth() // 0-based
+  const heatmapMonthLabel = heatmapNow.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+  const heatmapDaysInMonth = new Date(heatmapYear, heatmapMonthIndex + 1, 0).getDate()
+  // JS getDay() is Sun=0..Sat=6; convert to Mon=0..Sun=6 to match the header row.
+  const heatmapStartDow = (new Date(heatmapYear, heatmapMonthIndex, 1).getDay() + 6) % 7
+  const heatmapToday = heatmapNow.getDate()
+  const allTrackedRecords = records.filter(r => !ATTENDANCE_EXCLUDED_IDS.includes(r.employeeId))
 
   return (
     <div className="space-y-5">
@@ -247,23 +249,25 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
         </div>
       </div>
 
-      {/* Heatmap */}
+      {/* Heatmap — the current month, computed live from real attendance
+          records (allTrackedRecords) rather than a fixed/seeded pattern. A
+          day with zero records marked yet (very likely early on, for a
+          fresh database) shows as "no data" rather than a fabricated rate. */}
       <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h3 className="font-serif text-lg font-semibold text-foreground mb-4">August 2024 — Attendance Heatmap</h3>
+        <h3 className="font-serif text-lg font-semibold text-foreground mb-4">{heatmapMonthLabel} — Attendance Heatmap</h3>
         <div className="overflow-x-auto">
           <div className="grid grid-cols-7 gap-1.5 min-w-[420px]">
             {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
               <div key={d} className="text-xs text-center font-semibold text-muted-foreground pb-1">{d}</div>
             ))}
-            {/* Pad to start on Thursday (index 3) */}
-            {Array.from({ length: AUG_START_DOW }).map((_, i) => (
+            {Array.from({ length: heatmapStartDow }).map((_, i) => (
               <div key={`pad-${i}`} className="h-9 rounded-md" style={{ backgroundColor: '#FAFAFA' }} />
             ))}
-            {Array.from({ length: 31 }).map((_, i) => {
+            {Array.from({ length: heatmapDaysInMonth }).map((_, i) => {
               const day = i + 1
-              const dow = (AUG_START_DOW + i) % 7
+              const dow = (heatmapStartDow + i) % 7
               const isWeekend = dow >= 5
-              const isFuture = day > 14
+              const isFuture = day > heatmapToday
               if (isWeekend) {
                 return (
                   <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs"
@@ -280,11 +284,23 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
                   </div>
                 )
               }
-              const bucket = HEATMAP_SEED[i] || 0
+              const dateStr = `${heatmapYear}-${String(heatmapMonthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+              const dayRecords = allTrackedRecords.filter(r => r.date === dateStr)
+              if (dayRecords.length === 0) {
+                return (
+                  <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs text-muted-foreground/50 border border-dashed border-border"
+                    title="No attendance marked yet">
+                    {day}
+                  </div>
+                )
+              }
+              const presentCount = dayRecords.filter(r => r.status !== 'absent').length
+              const rate = presentCount / dayRecords.length
+              const bucket = rate >= 0.85 ? 0 : rate >= 0.7 ? 1 : 2
               const col = HEATMAP_COLORS[bucket]
               return (
                 <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs font-semibold cursor-default"
-                  title={bucket === 0 ? '≥85% present' : bucket === 1 ? '70–84% present' : '<70% present'}
+                  title={`${Math.round(rate * 100)}% present (${presentCount}/${dayRecords.length} marked)`}
                   style={{ backgroundColor: col.bg, color: col.text }}>
                   {day}
                 </div>
@@ -298,9 +314,10 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
             { col: HEATMAP_COLORS[1], label: '70–84%' },
             { col: HEATMAP_COLORS[2], label: '<70%' },
             { bg: '#F5F2EC', text: '#E5DFD5', label: 'Weekend' },
+            { bg: '#FFFFFF', text: '#D6D0C4', label: 'No data yet' },
           ].map(l => (
             <div key={l.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: l.bg || l.col?.bg }} />
+              <div className="w-4 h-4 rounded border border-dashed border-border" style={{ backgroundColor: l.bg || l.col?.bg }} />
               {l.label}
             </div>
           ))}

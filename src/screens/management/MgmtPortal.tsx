@@ -105,7 +105,7 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Monthly Payroll</p>
               <p className="text-3xl font-bold font-serif" style={{ color: navy }}>₹{(totalMonthlyPayroll / 100000).toFixed(2)}L</p>
-              <p className="text-xs text-muted-foreground mt-1">August 2024</p>
+              <p className="text-xs text-muted-foreground mt-1">Gross, all cycles</p>
             </div>
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Open Tickets</p>

@@ -20,8 +20,8 @@ const CHECKLIST = [
 type DocStatus = 'complete' | 'pending' | 'missing'
 const DOC_STATUS_STYLE: Record<DocStatus, { bg: string; text: string; label: string }> = {
   complete: { bg: '#ECFDF5', text: '#059669', label: 'Docs Complete' },
-  pending:  { bg: '#FFFBEB', text: '#D97706', label: 'Docs Pending' },
-  missing:  { bg: '#FEF2F2', text: '#DC2626', label: 'Docs Missing' },
+  pending: { bg: '#FFFBEB', text: '#D97706', label: 'Docs Pending' },
+  missing: { bg: '#FEF2F2', text: '#DC2626', label: 'Docs Missing' },
 }
 
 interface Candidate {
@@ -195,7 +195,7 @@ export default function OnboardingHR({ onboarding, onOnboardingUpdate }: Onboard
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Active Onboarding', value: candidates.length },
-          { label: 'Joining This Month', value: candidates.filter(c => c.joiningDate.startsWith('2024-08')).length },
+          { label: 'Joining This Month', value: candidates.filter(c => c.joiningDate.startsWith(new Date().toISOString().slice(0, 7))).length },
           { label: 'Documents Incomplete', value: candidates.filter(c => c.docStatus !== 'complete').length },
         ].map(s => (
           <div key={s.label} className="bg-card rounded-xl border border-border shadow-sm p-5">
