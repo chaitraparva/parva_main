@@ -70,6 +70,25 @@ function attendanceFieldsOf(a: AttendanceRecord): Omit<api.RawAttendanceRecord, 
   return out as Omit<api.RawAttendanceRecord, 'id'>
 }
 
+// claimedOn is deliberately excluded — it's server-set (DB default now())
+// and not writable. Field names don't all match 1:1 (receiptFileName here
+// vs. the database's receiptFilename — see api.ts), so this is spelled out
+// explicitly rather than looped generically like the other modules.
+function expenseFieldsOf(e: ExpenseClaim): Omit<api.RawExpenseClaim, 'id' | 'claimedOn'> {
+  return {
+    employeeId: e.employeeId,
+    date: e.date,
+    description: e.description,
+    category: e.category,
+    amount: e.amount,
+    receiptFilename: e.receiptFileName ?? null,
+    status: e.status,
+    approvedBy: e.approvedBy,
+    reimbursedOn: e.reimbursedOn,
+    note: e.note,
+  }
+}
+
 // Onboarding candidate as used across the (loosely-typed) Onboarding screens.
 interface OnboardingCandidate {
   id: string
@@ -104,7 +123,9 @@ export default function App() {
   // arrays; nothing invented to fill it back in) for now.
   const [rawLeaves, setRawLeaves] = useState<api.RawLeaveRequest[]>([])
   const [leavesLoaded, setLeavesLoaded] = useState(false)
-  const [expenses, setExpenses] = useState<ExpenseClaim[]>(mockData.expenseClaims)
+  // Expense claims are real now too — see rawExpenses/expenses below.
+  const [rawExpenses, setRawExpenses] = useState<api.RawExpenseClaim[]>([])
+  const [expensesLoaded, setExpensesLoaded] = useState(false)
   // Payroll records are real now too — see rawPayroll/payroll below.
   const [rawPayroll, setRawPayroll] = useState<api.RawPayrollRecord[]>([])
   const [payrollLoaded, setPayrollLoaded] = useState(false)
@@ -187,7 +208,36 @@ export default function App() {
         }
       })()
   }
-  const onExpensesUpdate = (next: ExpenseClaim[]) => { setExpenses(next) }
+  // Same generic diff-and-sync approach as onPayrollUpdate/onAttendanceUpdate.
+  const onExpensesUpdate = (next: ExpenseClaim[]) => {
+    const prevById = new Map(expenses.map(e => [e.id, e]))
+    const created = next.filter(e => !prevById.has(e.id))
+    const updated = next.filter(e => {
+      const prev = prevById.get(e.id)
+      return prev && JSON.stringify(expenseFieldsOf(prev)) !== JSON.stringify(expenseFieldsOf(e))
+    })
+
+    setRawExpenses(next.map(e => ({ id: e.id, claimedOn: e.claimedOn, ...expenseFieldsOf(e) } as api.RawExpenseClaim)))
+
+      ; (async () => {
+        try {
+          for (const e of created) {
+            await api.createExpenseClaim(expenseFieldsOf(e))
+          }
+          for (const e of updated) {
+            await api.updateExpenseClaim(e.id, expenseFieldsOf(e))
+          }
+        } catch (err) {
+          console.error('Failed to save an expense claim change to the server', err)
+        } finally {
+          try {
+            setRawExpenses(await api.fetchExpenseClaims())
+          } catch {
+            // Offline/unreachable — stay on the optimistic state.
+          }
+        }
+      })()
+  }
   // Same idea as onLeaveUpdate above, but generic over every persistable
   // field instead of hardcoding which ones count as "changed" — payroll
   // records get touched by more distinct actions (generate, manager
@@ -289,6 +339,8 @@ export default function App() {
     setPayrollLoaded(false)
     setRawAttendance([])
     setAttendanceLoaded(false)
+    setRawExpenses([])
+    setExpensesLoaded(false)
     setScreen('hr-dashboard')
   }
 
@@ -379,6 +431,23 @@ export default function App() {
     return () => { cancelled = true }
   }, [role, attendanceLoaded])
 
+  // Same pattern, for expense claims.
+  useEffect(() => {
+    if (!role || expensesLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchExpenseClaims()
+          if (!cancelled) setRawExpenses(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setExpensesLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, expensesLoaded])
+
   if (checkingSession) return null
 
   if (!role) return <Login onLogin={handleLogin} />
@@ -429,6 +498,24 @@ export default function App() {
       id: String(r.id),
       employeeName: emp?.name || 'Unknown',
       date: toDateOnly(r.date),
+    }
+  })
+
+  // Same idea — expense_claims doesn't store the employee's name/department,
+  // and has no column yet for the actual receipt image (see api.ts).
+  const expenses: ExpenseClaim[] = rawExpenses.map(r => {
+    const emp = employees.find(e => e.id === r.employeeId)
+    return {
+      ...r,
+      id: String(r.id),
+      employeeName: emp?.name || 'Unknown',
+      department: emp?.department || '',
+      date: toDateOnly(r.date),
+      claimedOn: toDateOnly(r.claimedOn),
+      reimbursedOn: r.reimbursedOn ? toDateOnly(r.reimbursedOn) : undefined,
+      amount: Number(r.amount),
+      receipt: !!r.receiptFilename,
+      receiptFileName: r.receiptFilename || undefined,
     }
   })
 

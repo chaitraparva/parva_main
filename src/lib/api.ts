@@ -8,7 +8,7 @@
 // the user back to the sign-in screen — see restoreSession() below, called
 // once from App.tsx on mount.
 
-import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord } from '../types'
+import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim } from '../types'
 
 const TOKEN_KEY = 'parva_auth_token'
 
@@ -269,4 +269,41 @@ export async function updateAttendanceRecord(id: string, patch: Partial<Omit<Raw
     body: JSON.stringify(patch),
   })
   return data.attendance_record
+}
+
+// ─────────────────────── Expense claims ───────────────────────
+// Same pattern again — expense_claims stores employee_id, not the
+// employee's name/department. It also has no column at all for the actual
+// receipt IMAGE (receiptDataUrl): the schema only keeps receipt_s3_key/
+// receipt_filename, meant for a real file-storage upload (S3/Supabase
+// Storage) that hasn't been built yet — so a receipt photo is visible only
+// for the current session and is lost on refresh until that's added.
+// claimed_on is server-set (DB default now()) and isn't in allowedColumns,
+// so it's read-only here — never sent on create/update. Note the column is
+// receipt_filename (camelCased receiptFilename) — the frontend's
+// ExpenseClaim type spells the same concept receiptFileName (capital N);
+// App.tsx's expenseFieldsOf() translates between the two explicitly.
+export type RawExpenseClaim = Omit<ExpenseClaim, 'employeeName' | 'department' | 'receipt' | 'receiptDataUrl' | 'receiptFileName'> & {
+  receiptFilename?: string | null
+}
+
+export async function fetchExpenseClaims(): Promise<RawExpenseClaim[]> {
+  const data = await request<{ expense_claims: RawExpenseClaim[] }>('/api/expense-claims', { method: 'GET' })
+  return data.expense_claims
+}
+
+export async function createExpenseClaim(input: Omit<RawExpenseClaim, 'id' | 'claimedOn'>): Promise<RawExpenseClaim> {
+  const data = await request<{ expense_claim: RawExpenseClaim }>('/api/expense-claims', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.expense_claim
+}
+
+export async function updateExpenseClaim(id: string, patch: Partial<Omit<RawExpenseClaim, 'id' | 'claimedOn'>>): Promise<RawExpenseClaim> {
+  const data = await request<{ expense_claim: RawExpenseClaim }>(`/api/expense-claims/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.expense_claim
 }
