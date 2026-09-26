@@ -6,9 +6,9 @@ const navy = '#1C2B4A'
 const gold = '#C9A96E'
 
 const statusStyle: Record<string, { bg: string; text: string; label: string }> = {
-  present:  { bg: '#ECFDF5', text: '#059669', label: 'Present' },
-  absent:   { bg: '#FEF2F2', text: '#DC2626', label: 'Absent' },
-  late:     { bg: '#FFFBEB', text: '#D97706', label: 'Late' },
+  present: { bg: '#ECFDF5', text: '#059669', label: 'Present' },
+  absent: { bg: '#FEF2F2', text: '#DC2626', label: 'Absent' },
+  late: { bg: '#FFFBEB', text: '#D97706', label: 'Late' },
   'half-day': { bg: '#F5F3FF', text: '#7C3AED', label: 'Half Day' },
 }
 
@@ -20,9 +20,9 @@ const ATTENDANCE_EXCLUDED_IDS = ['DF230001', 'DF230002', 'PA230045'] // Neelesh 
 
 // Deterministic attendance rates for heatmap (day of month → rate bucket)
 const HEATMAP_SEED = [
-  1,1,1,0,1, 1,1,0,1,0,
-  1,1,2,1,1, 0,0,1,1,2,
-  1,1,1,0,1, 1,1,0,1,1,
+  1, 1, 1, 0, 1, 1, 1, 0, 1, 0,
+  1, 1, 2, 1, 1, 0, 0, 1, 1, 2,
+  1, 1, 1, 0, 1, 1, 1, 0, 1, 1,
   1,
 ]
 // 0 = good (≥85%), 1 = mid (70-84%), 2 = low (<70%)
@@ -50,16 +50,20 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
       return next
     })
   }
-  const [dateFilter, setDateFilter] = useState('2024-08-14')
+  // Defaults to "All dates" / today rather than a fixed demo date — this is
+  // live data now, and a hardcoded 2024 date would hide everything by
+  // default.
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const [dateFilter, setDateFilter] = useState('')
   const [showMarkForm, setShowMarkForm] = useState(false)
-  const [markForm, setMarkForm] = useState({ employeeName: '', date: '2024-08-14', checkIn: '09:00', checkOut: '18:00', status: 'present' as AttStatus })
+  const [markForm, setMarkForm] = useState({ employeeName: '', date: todayIso, checkIn: '09:00', checkOut: '18:00', status: 'present' as AttStatus })
 
   const filtered = records.filter(r => !ATTENDANCE_EXCLUDED_IDS.includes(r.employeeId) && (!dateFilter || r.date === dateFilter))
 
   const summary = {
     present: filtered.filter(r => r.status === 'present').length,
-    absent:  filtered.filter(r => r.status === 'absent').length,
-    late:    filtered.filter(r => r.status === 'late').length,
+    absent: filtered.filter(r => r.status === 'absent').length,
+    late: filtered.filter(r => r.status === 'late').length,
     halfDay: filtered.filter(r => r.status === 'half-day').length,
   }
 
@@ -126,10 +130,12 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Date *</label>
-              <select value={markForm.date} onChange={e => setMarkForm(p => ({ ...p, date: e.target.value }))}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none">
-                {datesAvailable.map(d => <option key={d}>{d}</option>)}
-              </select>
+              {/* A free date picker, not a dropdown limited to dates that
+                  already have a record — otherwise there'd be no way to
+                  mark attendance for a brand-new date once this runs on a
+                  real (initially empty) database. */}
+              <input type="date" value={markForm.date} onChange={e => setMarkForm(p => ({ ...p, date: e.target.value }))}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Status</label>
@@ -166,10 +172,10 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { title: 'Present',  value: summary.present,  bg: statusStyle.present.bg,    text: statusStyle.present.text },
-          { title: 'Absent',   value: summary.absent,   bg: statusStyle.absent.bg,     text: statusStyle.absent.text },
-          { title: 'Late',     value: summary.late,     bg: statusStyle.late.bg,       text: statusStyle.late.text },
-          { title: 'Half Day', value: summary.halfDay,  bg: statusStyle['half-day'].bg, text: statusStyle['half-day'].text },
+          { title: 'Present', value: summary.present, bg: statusStyle.present.bg, text: statusStyle.present.text },
+          { title: 'Absent', value: summary.absent, bg: statusStyle.absent.bg, text: statusStyle.absent.text },
+          { title: 'Late', value: summary.late, bg: statusStyle.late.bg, text: statusStyle.late.text },
+          { title: 'Half Day', value: summary.halfDay, bg: statusStyle['half-day'].bg, text: statusStyle['half-day'].text },
         ].map(s => (
           <div key={s.title} className="bg-card rounded-xl border border-border shadow-sm p-5 flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl flex items-center justify-center font-serif text-2xl font-bold"
@@ -201,43 +207,43 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
           </div>
         </div>
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px]">
-          <thead>
-            <tr className="border-b border-border bg-muted/20">
-              {['Employee', 'Date', 'Check In', 'Check Out', 'Working Hours', 'Status'].map(h => (
-                <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(rec => {
-              const ss = statusStyle[rec.status]
-              return (
-                <tr key={rec.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
-                        style={{ backgroundColor: `${navy}14`, color: navy }}>
-                        {rec.employeeName.split(' ').map(n => n[0]).join('')}
+          <table className="w-full min-w-[640px]">
+            <thead>
+              <tr className="border-b border-border bg-muted/20">
+                {['Employee', 'Date', 'Check In', 'Check Out', 'Working Hours', 'Status'].map(h => (
+                  <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(rec => {
+                const ss = statusStyle[rec.status]
+                return (
+                  <tr key={rec.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                          style={{ backgroundColor: `${navy}14`, color: navy }}>
+                          {rec.employeeName.split(' ').map(n => n[0]).join('')}
+                        </div>
+                        <span className="text-sm font-semibold text-foreground">{rec.employeeName}</span>
                       </div>
-                      <span className="text-sm font-semibold text-foreground">{rec.employeeName}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-4 text-sm text-muted-foreground">{rec.date}</td>
-                  <td className="px-5 py-4 text-sm font-medium text-foreground">{rec.checkIn || '—'}</td>
-                  <td className="px-5 py-4 text-sm font-medium text-foreground">{rec.checkOut || '—'}</td>
-                  <td className="px-5 py-4 text-sm text-muted-foreground">{workHours(rec.checkIn, rec.checkOut)}</td>
-                  <td className="px-5 py-4">
-                    <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: ss.bg, color: ss.text }}>{ss.label}</span>
-                  </td>
-                </tr>
-              )
-            })}
-            {filtered.length === 0 && (
-              <tr><td colSpan={6} className="text-center py-10 text-sm text-muted-foreground">No records for selected date.</td></tr>
-            )}
-          </tbody>
-        </table>
+                    </td>
+                    <td className="px-5 py-4 text-sm text-muted-foreground">{rec.date}</td>
+                    <td className="px-5 py-4 text-sm font-medium text-foreground">{rec.checkIn || '—'}</td>
+                    <td className="px-5 py-4 text-sm font-medium text-foreground">{rec.checkOut || '—'}</td>
+                    <td className="px-5 py-4 text-sm text-muted-foreground">{workHours(rec.checkIn, rec.checkOut)}</td>
+                    <td className="px-5 py-4">
+                      <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: ss.bg, color: ss.text }}>{ss.label}</span>
+                    </td>
+                  </tr>
+                )
+              })}
+              {filtered.length === 0 && (
+                <tr><td colSpan={6} className="text-center py-10 text-sm text-muted-foreground">No records for selected date.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -245,46 +251,46 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
       <div className="bg-card rounded-xl border border-border shadow-sm p-6">
         <h3 className="font-serif text-lg font-semibold text-foreground mb-4">August 2024 — Attendance Heatmap</h3>
         <div className="overflow-x-auto">
-        <div className="grid grid-cols-7 gap-1.5 min-w-[420px]">
-          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-            <div key={d} className="text-xs text-center font-semibold text-muted-foreground pb-1">{d}</div>
-          ))}
-          {/* Pad to start on Thursday (index 3) */}
-          {Array.from({ length: AUG_START_DOW }).map((_, i) => (
-            <div key={`pad-${i}`} className="h-9 rounded-md" style={{ backgroundColor: '#FAFAFA' }} />
-          ))}
-          {Array.from({ length: 31 }).map((_, i) => {
-            const day = i + 1
-            const dow = (AUG_START_DOW + i) % 7
-            const isWeekend = dow >= 5
-            const isFuture = day > 14
-            if (isWeekend) {
+          <div className="grid grid-cols-7 gap-1.5 min-w-[420px]">
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+              <div key={d} className="text-xs text-center font-semibold text-muted-foreground pb-1">{d}</div>
+            ))}
+            {/* Pad to start on Thursday (index 3) */}
+            {Array.from({ length: AUG_START_DOW }).map((_, i) => (
+              <div key={`pad-${i}`} className="h-9 rounded-md" style={{ backgroundColor: '#FAFAFA' }} />
+            ))}
+            {Array.from({ length: 31 }).map((_, i) => {
+              const day = i + 1
+              const dow = (AUG_START_DOW + i) % 7
+              const isWeekend = dow >= 5
+              const isFuture = day > 14
+              if (isWeekend) {
+                return (
+                  <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs"
+                    style={{ backgroundColor: '#F5F2EC', color: '#E5DFD5' }}>
+                    {day}
+                  </div>
+                )
+              }
+              if (isFuture) {
+                return (
+                  <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs text-muted-foreground/40"
+                    style={{ backgroundColor: '#FAFAFA' }}>
+                    {day}
+                  </div>
+                )
+              }
+              const bucket = HEATMAP_SEED[i] || 0
+              const col = HEATMAP_COLORS[bucket]
               return (
-                <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs"
-                  style={{ backgroundColor: '#F5F2EC', color: '#E5DFD5' }}>
+                <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs font-semibold cursor-default"
+                  title={bucket === 0 ? '≥85% present' : bucket === 1 ? '70–84% present' : '<70% present'}
+                  style={{ backgroundColor: col.bg, color: col.text }}>
                   {day}
                 </div>
               )
-            }
-            if (isFuture) {
-              return (
-                <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs text-muted-foreground/40"
-                  style={{ backgroundColor: '#FAFAFA' }}>
-                  {day}
-                </div>
-              )
-            }
-            const bucket = HEATMAP_SEED[i] || 0
-            const col = HEATMAP_COLORS[bucket]
-            return (
-              <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs font-semibold cursor-default"
-                title={bucket === 0 ? '≥85% present' : bucket === 1 ? '70–84% present' : '<70% present'}
-                style={{ backgroundColor: col.bg, color: col.text }}>
-                {day}
-              </div>
-            )
-          })}
-        </div>
+            })}
+          </div>
         </div>
         <div className="flex items-center flex-wrap gap-x-6 gap-y-2 mt-4 justify-end">
           {[

@@ -47,6 +47,29 @@ function toDateOnly(value: string | null | undefined): string {
   return value ? String(value).slice(0, 10) : ''
 }
 
+// The subset of a PayrollRecord that's actually a database column (not
+// derived like employeeName/role, and not the id) — used to both send the
+// right shape to the API and to detect whether a record actually changed.
+const PAYROLL_FIELDS = [
+  'employeeId', 'month', 'baseSalary', 'incentives', 'deductions', 'netPay',
+  'status', 'managerApproved', 'hrProcessed', 'adminApproved',
+  'periodStart', 'periodEnd', 'reimbursements', 'bonus', 'otherDeductions',
+] as const
+
+function payrollFieldsOf(r: PayrollRecord): Omit<api.RawPayrollRecord, 'id'> {
+  const out: Record<string, unknown> = {}
+  for (const f of PAYROLL_FIELDS) out[f] = (r as unknown as Record<string, unknown>)[f] ?? null
+  return out as Omit<api.RawPayrollRecord, 'id'>
+}
+
+const ATTENDANCE_FIELDS = ['employeeId', 'date', 'checkIn', 'checkOut', 'status'] as const
+
+function attendanceFieldsOf(a: AttendanceRecord): Omit<api.RawAttendanceRecord, 'id'> {
+  const out: Record<string, unknown> = {}
+  for (const f of ATTENDANCE_FIELDS) out[f] = (a as unknown as Record<string, unknown>)[f] ?? null
+  return out as Omit<api.RawAttendanceRecord, 'id'>
+}
+
 // Onboarding candidate as used across the (loosely-typed) Onboarding screens.
 interface OnboardingCandidate {
   id: string
@@ -82,8 +105,12 @@ export default function App() {
   const [rawLeaves, setRawLeaves] = useState<api.RawLeaveRequest[]>([])
   const [leavesLoaded, setLeavesLoaded] = useState(false)
   const [expenses, setExpenses] = useState<ExpenseClaim[]>(mockData.expenseClaims)
-  const [payroll, setPayroll] = useState<PayrollRecord[]>(mockData.payrollRecords)
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>(mockData.attendanceRecords)
+  // Payroll records are real now too — see rawPayroll/payroll below.
+  const [rawPayroll, setRawPayroll] = useState<api.RawPayrollRecord[]>([])
+  const [payrollLoaded, setPayrollLoaded] = useState(false)
+  // Attendance records are real now too — see rawAttendance/attendance below.
+  const [rawAttendance, setRawAttendance] = useState<api.RawAttendanceRecord[]>([])
+  const [attendanceLoaded, setAttendanceLoaded] = useState(false)
   const [tickets, setTickets] = useState<EmployeeTicket[]>(mockData.employeeTickets)
   const [exits, setExits] = useState<ExitRecord[]>(mockData.exitRecords)
   const [requisitions, setRequisitions] = useState<JobRequisition[]>(mockData.jobRequisitions)
@@ -161,8 +188,70 @@ export default function App() {
       })()
   }
   const onExpensesUpdate = (next: ExpenseClaim[]) => { setExpenses(next) }
-  const onPayrollUpdate = (next: PayrollRecord[]) => { setPayroll(next) }
-  const onAttendanceUpdate = (next: AttendanceRecord[]) => { setAttendance(next) }
+  // Same idea as onLeaveUpdate above, but generic over every persistable
+  // field instead of hardcoding which ones count as "changed" — payroll
+  // records get touched by more distinct actions (generate, manager
+  // approve, HR process, finance sign-off) than leave requests do, so this
+  // diffs the actual stored columns rather than special-casing each one.
+  const onPayrollUpdate = (next: PayrollRecord[]) => {
+    const prevById = new Map(payroll.map(p => [p.id, p]))
+    const created = next.filter(p => !prevById.has(p.id))
+    const updated = next.filter(p => {
+      const prev = prevById.get(p.id)
+      return prev && JSON.stringify(payrollFieldsOf(prev)) !== JSON.stringify(payrollFieldsOf(p))
+    })
+
+    setRawPayroll(next.map(p => ({ id: p.id, ...payrollFieldsOf(p) } as api.RawPayrollRecord)))
+
+      ; (async () => {
+        try {
+          for (const p of created) {
+            await api.createPayrollRecord(payrollFieldsOf(p))
+          }
+          for (const p of updated) {
+            await api.updatePayrollRecord(p.id, payrollFieldsOf(p))
+          }
+        } catch (err) {
+          console.error('Failed to save a payroll record change to the server', err)
+        } finally {
+          try {
+            setRawPayroll(await api.fetchPayrollRecords())
+          } catch {
+            // Offline/unreachable — stay on the optimistic state.
+          }
+        }
+      })()
+  }
+  // Same generic diff-and-sync approach as onPayrollUpdate.
+  const onAttendanceUpdate = (next: AttendanceRecord[]) => {
+    const prevById = new Map(attendance.map(a => [a.id, a]))
+    const created = next.filter(a => !prevById.has(a.id))
+    const updated = next.filter(a => {
+      const prev = prevById.get(a.id)
+      return prev && JSON.stringify(attendanceFieldsOf(prev)) !== JSON.stringify(attendanceFieldsOf(a))
+    })
+
+    setRawAttendance(next.map(a => ({ id: a.id, ...attendanceFieldsOf(a) } as api.RawAttendanceRecord)))
+
+      ; (async () => {
+        try {
+          for (const a of created) {
+            await api.createAttendanceRecord(attendanceFieldsOf(a))
+          }
+          for (const a of updated) {
+            await api.updateAttendanceRecord(a.id, attendanceFieldsOf(a))
+          }
+        } catch (err) {
+          console.error('Failed to save an attendance record change to the server', err)
+        } finally {
+          try {
+            setRawAttendance(await api.fetchAttendanceRecords())
+          } catch {
+            // Offline/unreachable — stay on the optimistic state.
+          }
+        }
+      })()
+  }
   const onTicketsUpdate = (next: EmployeeTicket[]) => { setTickets(next) }
   const onExitsUpdate = (next: ExitRecord[]) => { setExits(next) }
   const onRequisitionsUpdate = (next: JobRequisition[]) => { setRequisitions(next) }
@@ -196,6 +285,10 @@ export default function App() {
     setEmployeesLoaded(false)
     setRawLeaves([])
     setLeavesLoaded(false)
+    setRawPayroll([])
+    setPayrollLoaded(false)
+    setRawAttendance([])
+    setAttendanceLoaded(false)
     setScreen('hr-dashboard')
   }
 
@@ -252,6 +345,40 @@ export default function App() {
     return () => { cancelled = true }
   }, [role, leavesLoaded])
 
+  // Same pattern, for payroll records.
+  useEffect(() => {
+    if (!role || payrollLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchPayrollRecords()
+          if (!cancelled) setRawPayroll(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setPayrollLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, payrollLoaded])
+
+  // Same pattern, for attendance records.
+  useEffect(() => {
+    if (!role || attendanceLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchAttendanceRecords()
+          if (!cancelled) setRawAttendance(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setAttendanceLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, attendanceLoaded])
+
   if (checkingSession) return null
 
   if (!role) return <Login onLogin={handleLogin} />
@@ -270,6 +397,38 @@ export default function App() {
       endDate: toDateOnly(r.endDate),
       appliedOn: toDateOnly(r.appliedOn),
       days: Number(r.days),
+    }
+  })
+
+  // Same idea — payroll_records doesn't store the employee's name or
+  // current job title either.
+  const payroll: PayrollRecord[] = rawPayroll.map(r => {
+    const emp = employees.find(e => e.id === r.employeeId)
+    return {
+      ...r,
+      id: String(r.id),
+      employeeName: emp?.name || 'Unknown',
+      role: emp?.role || 'agent',
+      baseSalary: Number(r.baseSalary),
+      incentives: Number(r.incentives),
+      deductions: Number(r.deductions),
+      netPay: Number(r.netPay),
+      periodStart: r.periodStart ? toDateOnly(r.periodStart) : undefined,
+      periodEnd: r.periodEnd ? toDateOnly(r.periodEnd) : undefined,
+      reimbursements: r.reimbursements != null ? Number(r.reimbursements) : undefined,
+      bonus: r.bonus != null ? Number(r.bonus) : undefined,
+      otherDeductions: r.otherDeductions != null ? Number(r.otherDeductions) : undefined,
+    }
+  })
+
+  // Same idea — attendance_records doesn't store the employee's name either.
+  const attendance: AttendanceRecord[] = rawAttendance.map(r => {
+    const emp = employees.find(e => e.id === r.employeeId)
+    return {
+      ...r,
+      id: String(r.id),
+      employeeName: emp?.name || 'Unknown',
+      date: toDateOnly(r.date),
     }
   })
 

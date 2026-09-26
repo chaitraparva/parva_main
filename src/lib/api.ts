@@ -8,7 +8,7 @@
 // the user back to the sign-in screen — see restoreSession() below, called
 // once from App.tsx on mount.
 
-import type { Employee, Role, LeaveRequest } from '../types'
+import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord } from '../types'
 
 const TOKEN_KEY = 'parva_auth_token'
 
@@ -208,4 +208,65 @@ export async function updateLeaveRequest(
     body: JSON.stringify(patch),
   })
   return data.leave_request
+}
+
+// ─────────────────────── Payroll records ───────────────────────
+// Same pattern as leave requests above: payroll_records only stores
+// employee_id — not the employee's name or current job title, which the
+// frontend's PayrollRecord type wants for display. App.tsx fills those in
+// from the employee directory. period_start/period_end come back as full
+// timestamps like every other DATE column; App.tsx trims those too.
+//
+// NOTE: periodStart/periodEnd/reimbursements/bonus/otherDeductions need
+// server/sql/03_payroll_payslip_fields_migration.sql run once against the
+// database — the original payroll_records table predates those fields.
+export type RawPayrollRecord = Omit<PayrollRecord, 'employeeName' | 'role'>
+
+export async function fetchPayrollRecords(): Promise<RawPayrollRecord[]> {
+  const data = await request<{ payroll_records: RawPayrollRecord[] }>('/api/payroll-records', { method: 'GET' })
+  return data.payroll_records
+}
+
+export async function createPayrollRecord(input: Omit<RawPayrollRecord, 'id'>): Promise<RawPayrollRecord> {
+  const data = await request<{ payroll_record: RawPayrollRecord }>('/api/payroll-records', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.payroll_record
+}
+
+export async function updatePayrollRecord(id: string, patch: Partial<Omit<RawPayrollRecord, 'id'>>): Promise<RawPayrollRecord> {
+  const data = await request<{ payroll_record: RawPayrollRecord }>(`/api/payroll-records/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.payroll_record
+}
+
+// ─────────────────────── Attendance records ───────────────────────
+// Same pattern again — attendance_records only stores employee_id, not the
+// employee's name; App.tsx fills that in from the employee directory. The
+// `date` column comes back as a full timestamp like every other DATE column
+// (App.tsx trims it to YYYY-MM-DD).
+export type RawAttendanceRecord = Omit<AttendanceRecord, 'employeeName'>
+
+export async function fetchAttendanceRecords(): Promise<RawAttendanceRecord[]> {
+  const data = await request<{ attendance_records: RawAttendanceRecord[] }>('/api/attendance-records', { method: 'GET' })
+  return data.attendance_records
+}
+
+export async function createAttendanceRecord(input: Omit<RawAttendanceRecord, 'id'>): Promise<RawAttendanceRecord> {
+  const data = await request<{ attendance_record: RawAttendanceRecord }>('/api/attendance-records', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.attendance_record
+}
+
+export async function updateAttendanceRecord(id: string, patch: Partial<Omit<RawAttendanceRecord, 'id'>>): Promise<RawAttendanceRecord> {
+  const data = await request<{ attendance_record: RawAttendanceRecord }>(`/api/attendance-records/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.attendance_record
 }
