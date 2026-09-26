@@ -43,9 +43,14 @@ interface Props {
 export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: payrollProp, tickets: employeeTickets, exits: exitRecords, currentEmployee }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
 
-  // Leave approvals
-  const pendingLeaves = leaves.filter(l => l.pendingWith === 'management' && l.submittedByRole === 'hr')
-  const historyLeaves = leaves.filter(l => l.pendingWith === 'done' && l.submittedByRole === 'hr')
+  // Leave approvals — management sees and can act on every pending leave
+  // company-wide (not just ones HR applied on someone's behalf), since the
+  // CEO/management tier is the top of the chain and a request can otherwise
+  // get stuck with no one to approve it (e.g. a CRM employee's leave routes
+  // to whoever holds the "manager" login role — if nobody does, it would
+  // never surface anywhere without this).
+  const pendingLeaves = leaves.filter(l => l.status === 'pending')
+  const historyLeaves = leaves.filter(l => l.status !== 'pending')
   const [confirmId, setConfirmId] = useState<{ id: string; action: 'approved' | 'rejected' } | null>(null)
 
   function handleLeave(id: string, action: 'approved' | 'rejected') {
@@ -135,32 +140,32 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
             <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>All Employees</h2>
             <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[520px]">
-              <thead>
-                <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                  <th className="pb-2 font-medium">Name</th>
-                  <th className="pb-2 font-medium">Role</th>
-                  <th className="pb-2 font-medium">Department</th>
-                  <th className="pb-2 font-medium">Team</th>
-                  <th className="pb-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map(e => (
-                  <tr key={e.id} className="border-b border-border hover:bg-muted/20">
-                    <td className="py-2.5 font-medium" style={{ color: navy }}>{e.name}</td>
-                    <td className="py-2.5 capitalize">{e.role}</td>
-                    <td className="py-2.5">{e.department}</td>
-                    <td className="py-2.5">{e.team}</td>
-                    <td className="py-2.5">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${e.status === 'active' ? 'bg-emerald-50 text-emerald-700' : e.status === 'on-leave' ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
-                        {e.status}
-                      </span>
-                    </td>
+              <table className="w-full text-sm min-w-[520px]">
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                    <th className="pb-2 font-medium">Name</th>
+                    <th className="pb-2 font-medium">Role</th>
+                    <th className="pb-2 font-medium">Department</th>
+                    <th className="pb-2 font-medium">Team</th>
+                    <th className="pb-2 font-medium">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {employees.map(e => (
+                    <tr key={e.id} className="border-b border-border hover:bg-muted/20">
+                      <td className="py-2.5 font-medium" style={{ color: navy }}>{e.name}</td>
+                      <td className="py-2.5 capitalize">{e.role}</td>
+                      <td className="py-2.5">{e.department}</td>
+                      <td className="py-2.5">{e.team}</td>
+                      <td className="py-2.5">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${e.status === 'active' ? 'bg-emerald-50 text-emerald-700' : e.status === 'on-leave' ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
+                          {e.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -169,26 +174,26 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Exit Records</h2>
               <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[520px]">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                    <th className="pb-2 font-medium">Employee</th>
-                    <th className="pb-2 font-medium">Exit Type</th>
-                    <th className="pb-2 font-medium">Last Day</th>
-                    <th className="pb-2 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {exitRecords.map(ex => (
-                    <tr key={ex.id} className="border-b border-border hover:bg-muted/20">
-                      <td className="py-2.5 font-medium">{ex.employeeName}</td>
-                      <td className="py-2.5">{ex.exitType}</td>
-                      <td className="py-2.5">{ex.lastWorkingDay}</td>
-                      <td className="py-2.5"><StatusBadge status={ex.status} /></td>
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                      <th className="pb-2 font-medium">Employee</th>
+                      <th className="pb-2 font-medium">Exit Type</th>
+                      <th className="pb-2 font-medium">Last Day</th>
+                      <th className="pb-2 font-medium">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {exitRecords.map(ex => (
+                      <tr key={ex.id} className="border-b border-border hover:bg-muted/20">
+                        <td className="py-2.5 font-medium">{ex.employeeName}</td>
+                        <td className="py-2.5">{ex.exitType}</td>
+                        <td className="py-2.5">{ex.lastWorkingDay}</td>
+                        <td className="py-2.5"><StatusBadge status={ex.status} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -223,9 +228,9 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
           )}
 
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Pending HR-Submitted Leaves</h2>
+            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Pending Leave Requests</h2>
             {pendingLeaves.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No pending leave requests for your approval.</p>
+              <p className="text-sm text-muted-foreground">No pending leave requests.</p>
             ) : (
               <div className="space-y-3">
                 {pendingLeaves.map(l => (
@@ -233,7 +238,9 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="font-semibold text-sm" style={{ color: navy }}>{l.employeeName}</p>
-                        <p className="text-xs text-muted-foreground">{l.department} · Applied {l.appliedOn}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {l.department} · Applied {l.appliedOn} · <span className="capitalize">{l.submittedByRole}</span>-submitted
+                        </p>
                       </div>
                       <StatusBadge status={l.status} />
                     </div>
@@ -269,28 +276,28 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>History</h2>
               <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[520px]">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                    <th className="pb-2 font-medium">Employee</th>
-                    <th className="pb-2 font-medium">Type</th>
-                    <th className="pb-2 font-medium">Dates</th>
-                    <th className="pb-2 font-medium">Days</th>
-                    <th className="pb-2 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {historyLeaves.map(l => (
-                    <tr key={l.id} className="border-b border-border hover:bg-muted/20">
-                      <td className="py-2.5">{l.employeeName}</td>
-                      <td className="py-2.5">{l.type}</td>
-                      <td className="py-2.5">{l.startDate} — {l.endDate}</td>
-                      <td className="py-2.5">{l.days}</td>
-                      <td className="py-2.5"><StatusBadge status={l.status} /></td>
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                      <th className="pb-2 font-medium">Employee</th>
+                      <th className="pb-2 font-medium">Type</th>
+                      <th className="pb-2 font-medium">Dates</th>
+                      <th className="pb-2 font-medium">Days</th>
+                      <th className="pb-2 font-medium">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {historyLeaves.map(l => (
+                      <tr key={l.id} className="border-b border-border hover:bg-muted/20">
+                        <td className="py-2.5">{l.employeeName}</td>
+                        <td className="py-2.5">{l.type}</td>
+                        <td className="py-2.5">{l.startDate} — {l.endDate}</td>
+                        <td className="py-2.5">{l.days}</td>
+                        <td className="py-2.5"><StatusBadge status={l.status} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
