@@ -1,345 +1,272 @@
-import { useEffect, useState } from 'react'
-import type { AttendanceRecord, Employee } from '../../types'
-import { Calendar, Plus, Check } from 'lucide-react'
+// Thin wrapper around the real backend (server/) — every call here is a
+// relative /api/... path, which works both in dev (vite.config.ts proxies
+// /api to the local Express server) and in production (vercel.json routes
+// /api/* to the same serverless function), so nothing here needs a
+// configured base URL.
+//
+// The session (JWT) is kept in localStorage so a page reload doesn't drop
+// the user back to the sign-in screen — see restoreSession() below, called
+// once from App.tsx on mount.
 
-const navy = '#1C2B4A'
-const gold = '#C9A96E'
+import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord } from '../types'
 
-const statusStyle: Record<string, { bg: string; text: string; label: string }> = {
-  present: { bg: '#ECFDF5', text: '#059669', label: 'Present' },
-  absent: { bg: '#FEF2F2', text: '#DC2626', label: 'Absent' },
-  late: { bg: '#FFFBEB', text: '#D97706', label: 'Late' },
-  'half-day': { bg: '#F5F3FF', text: '#7C3AED', label: 'Half Day' },
-}
+const TOKEN_KEY = 'parva_auth_token'
 
-type AttStatus = 'present' | 'absent' | 'late' | 'half-day'
-
-// Group leadership (CEO, Directors) aren't tracked in day-to-day attendance —
-// excluded from this screen's employee picker and log entirely.
-const ATTENDANCE_EXCLUDED_IDS = ['DF230001', 'DF230002', 'PA230045'] // Neelesh H P, Akshita Raturi, Chaitra
-
-// Heatmap day-rate buckets: 0 = good (≥85%), 1 = mid (70-84%), 2 = low (<70%)
-// — computed live from real attendance records below, not seeded/hardcoded.
-const HEATMAP_COLORS = [
-  { bg: '#D1FAE5', text: '#065F46' },
-  { bg: '#FEF3C7', text: '#92400E' },
-  { bg: '#FEE2E2', text: '#991B1B' },
-]
-
-interface AttendanceHRProps {
-  employees: Employee[]
-  attendance: AttendanceRecord[]
-  onAttendanceUpdate: (next: AttendanceRecord[]) => void
-}
-
-export default function AttendanceHR({ employees, attendance, onAttendanceUpdate }: AttendanceHRProps) {
-  const trackedEmployees = employees.filter(e => !ATTENDANCE_EXCLUDED_IDS.includes(e.id))
-  const [records, setRecordsLocal] = useState<AttendanceRecord[]>(attendance)
-  useEffect(() => { setRecordsLocal(attendance) }, [attendance])
-  const setRecords = (updater: AttendanceRecord[] | ((prev: AttendanceRecord[]) => AttendanceRecord[])) => {
-    setRecordsLocal(prev => {
-      const next = typeof updater === 'function' ? (updater as (prev: AttendanceRecord[]) => AttendanceRecord[])(prev) : updater
-      onAttendanceUpdate(next)
-      return next
-    })
+export function getToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
   }
-  // Defaults to "All dates" / today rather than a fixed demo date — this is
-  // live data now, and a hardcoded 2024 date would hide everything by
-  // default.
-  const todayIso = new Date().toISOString().slice(0, 10)
-  const [dateFilter, setDateFilter] = useState('')
-  const [showMarkForm, setShowMarkForm] = useState(false)
-  const [markForm, setMarkForm] = useState({ employeeName: '', date: todayIso, checkIn: '09:00', checkOut: '18:00', status: 'present' as AttStatus })
+}
 
-  const filtered = records.filter(r => !ATTENDANCE_EXCLUDED_IDS.includes(r.employeeId) && (!dateFilter || r.date === dateFilter))
-
-  const summary = {
-    present: filtered.filter(r => r.status === 'present').length,
-    absent: filtered.filter(r => r.status === 'absent').length,
-    late: filtered.filter(r => r.status === 'late').length,
-    halfDay: filtered.filter(r => r.status === 'half-day').length,
+function setToken(token: string) {
+  try {
+    localStorage.setItem(TOKEN_KEY, token)
+  } catch {
+    // Private-browsing/storage-blocked — session just won't survive a
+    // reload; not fatal, the rest of the app still works for this visit.
   }
+}
 
-  const datesAvailable = [...new Set(records.map(r => r.date))].sort().reverse()
-
-  const markAttendance = () => {
-    if (!markForm.employeeName || !markForm.date) return
-    const emp = trackedEmployees.find(e => e.name === markForm.employeeName)
-    const existing = records.find(r => r.employeeId === (emp?.id || 'x') && r.date === markForm.date)
-    if (existing) {
-      setRecords(prev => prev.map(r => r.id === existing.id ? { ...r, status: markForm.status, checkIn: markForm.checkIn, checkOut: markForm.checkOut } : r))
-    } else {
-      const newRec: AttendanceRecord = {
-        id: `att-${Date.now()}`,
-        employeeId: emp?.id || 'emp-x',
-        employeeName: markForm.employeeName,
-        date: markForm.date,
-        checkIn: markForm.checkIn,
-        checkOut: markForm.checkOut,
-        status: markForm.status,
-      }
-      setRecords(prev => [...prev, newRec])
-    }
-    setShowMarkForm(false)
+export function clearToken() {
+  try {
+    localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    // Nothing to do if storage isn't available.
   }
+}
 
-  const workHours = (checkIn: string, checkOut: string) => {
-    if (!checkIn || !checkOut) return '—'
-    const [ih, im] = checkIn.split(':').map(Number)
-    const [oh, om] = checkOut.split(':').map(Number)
-    const h = ((oh * 60 + om) - (ih * 60 + im)) / 60
-    return `${h.toFixed(1)} hrs`
+// A minimal identity of who's signed in and which single portal role this
+// session is acting as (see server/src/routes/auth.js's /me for why this is
+// separate from the employee's full loginRoles list).
+export interface Session {
+  role: Role
+  employee: Employee
+}
+
+class ApiError extends Error { }
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getToken()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> | undefined),
   }
+  if (token) headers.Authorization = `Bearer ${token}`
 
-  // Heatmap: the current calendar month, computed live from real attendance
-  // records (not a fixed/seeded month — see the Heatmap section below).
-  const heatmapNow = new Date()
-  const heatmapYear = heatmapNow.getFullYear()
-  const heatmapMonthIndex = heatmapNow.getMonth() // 0-based
-  const heatmapMonthLabel = heatmapNow.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-  const heatmapDaysInMonth = new Date(heatmapYear, heatmapMonthIndex + 1, 0).getDate()
-  // JS getDay() is Sun=0..Sat=6; convert to Mon=0..Sun=6 to match the header row.
-  const heatmapStartDow = (new Date(heatmapYear, heatmapMonthIndex, 1).getDay() + 6) % 7
-  const heatmapToday = heatmapNow.getDate()
-  const allTrackedRecords = records.filter(r => !ATTENDANCE_EXCLUDED_IDS.includes(r.employeeId))
+  const res = await fetch(path, { ...options, headers })
+  const isJson = res.headers.get('content-type')?.includes('application/json')
+  const data = isJson ? await res.json() : null
 
-  return (
-    <div className= "space-y-5" >
-    <div className="flex items-center justify-between" >
-      <div>
-      <h2 className="font-serif text-2xl font-semibold text-foreground" > Attendance </h2>
-        < p className = "text-sm text-muted-foreground mt-0.5" > Daily log, monthly trends, and manual attendance marking </p>
-          </div>
-          < button onClick = {() => setShowMarkForm(!showMarkForm)
+  if (!res.ok) {
+    throw new ApiError(data?.error || `Request failed (${res.status}).`)
+  }
+  return data as T
 }
-className = "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-style = {{ backgroundColor: navy, color: '#FAF8F5' }}>
-  <Plus size={ 15 } /> Mark Attendance
-    </button>
-    </div>
 
-{/* Mark form */ }
-{
-  showMarkForm && (
-    <div className="bg-card rounded-xl border border-border shadow-sm p-6" >
-      <h3 className="font-serif text-base font-semibold text-foreground mb-4" > Mark / Update Attendance </h3>
-        < div className = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4" >
-          <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1.5" > Employee * </label>
-            < select value = { markForm.employeeName } onChange = { e => setMarkForm(p => ({ ...p, employeeName: e.target.value }))
+// The backend's employees table uses job_title as the column name (camelCased
+// to jobTitle by the API) but the frontend's Employee type has always called
+// that same concept `role`. This is the one place that translation happens.
+function mapApiEmployee(raw: any): Employee {
+  const { jobTitle, ...rest } = raw
+  return { ...rest, role: jobTitle } as Employee
 }
-className = "w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" >
-  <option value="" > Select…</option>
-{ trackedEmployees.map(e => <option key={ e.id } > { e.name } </option>) }
-</select>
-  </div>
-  < div >
-  <label className="block text-xs font-medium text-muted-foreground mb-1.5" > Date * </label>
-{/* A free date picker, not a dropdown limited to dates that
-                  already have a record — otherwise there'd be no way to
-                  mark attendance for a brand-new date once this runs on a
-                  real (initially empty) database. */}
-<input type="date" value = { markForm.date } onChange = { e => setMarkForm(p => ({ ...p, date: e.target.value }))}
-className = "w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
-  </div>
-  < div >
-  <label className="block text-xs font-medium text-muted-foreground mb-1.5" > Status </label>
-    < select value = { markForm.status } onChange = { e => setMarkForm(p => ({ ...p, status: e.target.value as AttStatus }))}
-className = "w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" >
-  { Object.entries(statusStyle).map(([k, v]) => <option key={ k } value = { k } > { v.label } </option>) }
-  </select>
-  </div>
-  < div >
-  <label className="block text-xs font-medium text-muted-foreground mb-1.5" > Check In </label>
-    < input type = "time" value = { markForm.checkIn } onChange = { e => setMarkForm(p => ({ ...p, checkIn: e.target.value }))}
-className = "w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
-  </div>
-  < div >
-  <label className="block text-xs font-medium text-muted-foreground mb-1.5" > Check Out </label>
-    < input type = "time" value = { markForm.checkOut } onChange = { e => setMarkForm(p => ({ ...p, checkOut: e.target.value }))}
-className = "w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
-  </div>
-  </div>
-  < div className = "flex gap-3" >
-    <button onClick={ markAttendance }
-className = "px-5 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
-style = {{ backgroundColor: gold, color: navy }}>
-  <Check size={ 14 } className = "inline mr-1.5" /> Save Attendance
-    </button>
-    < button onClick = {() => setShowMarkForm(false)}
-className = "px-5 py-2 rounded-lg text-sm font-medium border border-border text-muted-foreground hover:bg-muted transition-all" >
-  Cancel
-  </button>
-  </div>
-  </div>
-      )}
 
-{/* KPI cards */ }
-<div className="grid grid-cols-2 lg:grid-cols-4 gap-4" >
-{
-  [
-  { title: 'Present', value: summary.present, bg: statusStyle.present.bg, text: statusStyle.present.text },
-  { title: 'Absent', value: summary.absent, bg: statusStyle.absent.bg, text: statusStyle.absent.text },
-  { title: 'Late', value: summary.late, bg: statusStyle.late.bg, text: statusStyle.late.text },
-  { title: 'Half Day', value: summary.halfDay, bg: statusStyle['half-day'].bg, text: statusStyle['half-day'].text },
-        ].map(s => (
-    <div key= { s.title } className = "bg-card rounded-xl border border-border shadow-sm p-5 flex items-center gap-4" >
-    <div className="w-12 h-12 rounded-xl flex items-center justify-center font-serif text-2xl font-bold"
-              style = {{ backgroundColor: s.bg, color: s.text }} >
-  { s.value }
-  </div>
-  < div >
-  <p className="text-sm font-semibold text-foreground" > { s.title } </p>
-    < p className = "text-xs text-muted-foreground" >
-      { filtered.length > 0 ? `${Math.round((s.value / filtered.length) * 100)}%` : '—' }
-      </p>
-      </div>
-      </div>
-        ))}
-</div>
-
-{/* Daily log */ }
-<div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden" >
-  <div className="p-5 border-b border-border flex items-center gap-4" >
-    <Calendar size={ 18 } className = "text-muted-foreground" />
-      <h3 className="font-serif text-lg font-semibold text-foreground" > Daily Attendance Log </h3>
-        < div className = "ml-auto flex items-center gap-2" >
-          <span className="text-xs text-muted-foreground" > Date: </span>
-            < select value = { dateFilter } onChange = { e => setDateFilter(e.target.value) }
-className = "px-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none" >
-  <option value="" > All dates </option>
-{ datesAvailable.map(d => <option key={ d } > { d } </option>) }
-</select>
-  </div>
-  </div>
-  < div className = "overflow-x-auto" >
-    <table className="w-full min-w-[640px]" >
-      <thead>
-      <tr className="border-b border-border bg-muted/20" >
-      {
-        ['Employee', 'Date', 'Check In', 'Check Out', 'Working Hours', 'Status'].map(h => (
-          <th key= { h } className = "px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider" > { h } </th>
-        ))
-      }
-        </tr>
-        </thead>
-        <tbody>
-{
-  filtered.map(rec => {
-    const ss = statusStyle[rec.status]
-    return (
-      <tr key= { rec.id } className = "border-b border-border last:border-0 hover:bg-muted/20 transition-colors" >
-        <td className="px-5 py-4" >
-          <div className="flex items-center gap-2.5" >
-            <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
-    style = {{ backgroundColor: `${navy}14`, color: navy }
-  }>
-  { rec.employeeName.split(' ').map(n => n[0]).join('') }
-  </div>
-  < span className = "text-sm font-semibold text-foreground" > { rec.employeeName } </span>
-  </div>
-  </td>
-  < td className = "px-5 py-4 text-sm text-muted-foreground" > { rec.date } </td>
-  < td className = "px-5 py-4 text-sm font-medium text-foreground" > { rec.checkIn || '—' } </td>
-  < td className = "px-5 py-4 text-sm font-medium text-foreground" > { rec.checkOut || '—' } </td>
-  < td className = "px-5 py-4 text-sm text-muted-foreground" > { workHours(rec.checkIn, rec.checkOut)
-} </td>
-  < td className = "px-5 py-4" >
-    <span className="px-2.5 py-1 rounded-full text-xs font-medium" style = {{ backgroundColor: ss.bg, color: ss.text }}> { ss.label } </span>
-      </td>
-      </tr>
-              )
-            })}
-{
-  filtered.length === 0 && (
-    <tr><td colSpan={ 6 } className = "text-center py-10 text-sm text-muted-foreground" > No records for selected date.< /td></tr >
-            )}
-</tbody>
-  </table>
-  </div>
-  </div>
-
-{/* Heatmap — the current month, computed live from real attendance
-          records (allTrackedRecords) rather than a fixed/seeded pattern. A
-          day with zero records marked yet (very likely early on, for a
-          fresh database) shows as "no data" rather than a fabricated rate. */}
-<div className="bg-card rounded-xl border border-border shadow-sm p-6" >
-  <h3 className="font-serif text-lg font-semibold text-foreground mb-4" > { heatmapMonthLabel } — Attendance Heatmap </h3>
-    < div className = "overflow-x-auto" >
-      <div className="grid grid-cols-7 gap-1.5 min-w-[420px]" >
-      {
-        ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-          <div key= { d } className = "text-xs text-center font-semibold text-muted-foreground pb-1" > { d } </div>
-        ))
-      }
-{
-  Array.from({ length: heatmapStartDow }).map((_, i) => (
-    <div key= {`pad-${i}`} className = "h-9 rounded-md" style = {{ backgroundColor: '#FAFAFA' }} />
-          ))}
-{
-  Array.from({ length: heatmapDaysInMonth }).map((_, i) => {
-    const day = i + 1
-    const dow = (heatmapStartDow + i) % 7
-    const isWeekend = dow >= 5
-    const isFuture = day > heatmapToday
-    if (isWeekend) {
-      return (
-        <div key= { day } className = "h-9 rounded-md flex items-center justify-center text-xs"
-      style = {{ backgroundColor: '#F5F2EC', color: '#E5DFD5' }
-    }>
-      { day }
-      </div>
-              )
+export async function login(role: Role, email: string, password: string): Promise<Session> {
+  const data = await request<{ token: string; employee: any }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ role, email, password }),
+  })
+  setToken(data.token)
+  // /login only returns a handful of fields (id, name, title, jobTitle,
+  // loginRole(s)) — enough to sign the JWT, but the app needs the full
+  // profile (email, phone, department, etc.), so fetch that separately now
+  // that we're authenticated.
+  const employee = await fetchEmployeeById(data.employee.id)
+  return { role, employee }
 }
-if (isFuture) {
-  return (
-    <div key= { day } className = "h-9 rounded-md flex items-center justify-center text-xs text-muted-foreground/40"
-  style = {{ backgroundColor: '#FAFAFA' }
-}>
-  { day }
-  </div>
-              )
-            }
-const dateStr = `${heatmapYear}-${String(heatmapMonthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-const dayRecords = allTrackedRecords.filter(r => r.date === dateStr)
-if (dayRecords.length === 0) {
-  return (
-    <div key= { day } className = "h-9 rounded-md flex items-center justify-center text-xs text-muted-foreground/50 border border-dashed border-border"
-  title = "No attendance marked yet" >
-    { day }
-    </div>
-              )
+
+// Restores a session from a previously-stored token (e.g. after a page
+// reload) — returns null if there's no token, or it's expired/invalid, in
+// which case the caller should fall back to showing the sign-in screen.
+export async function restoreSession(): Promise<Session | null> {
+  const token = getToken()
+  if (!token) return null
+  try {
+    const data = await request<{ employee: any; loginRole: Role }>('/api/auth/me', { method: 'GET' })
+    return { role: data.loginRole, employee: mapApiEmployee(data.employee) }
+  } catch {
+    clearToken()
+    return null
+  }
 }
-const presentCount = dayRecords.filter(r => r.status !== 'absent').length
-const rate = presentCount / dayRecords.length
-const bucket = rate >= 0.85 ? 0 : rate >= 0.7 ? 1 : 2
-const col = HEATMAP_COLORS[bucket]
-return (
-  <div key= { day } className = "h-9 rounded-md flex items-center justify-center text-xs font-semibold cursor-default"
-title = {`${Math.round(rate * 100)}% present (${presentCount}/${dayRecords.length} marked)`}
-style = {{ backgroundColor: col.bg, color: col.text }}>
-  { day }
-  </div>
-            )
-          })}
-</div>
-  </div>
-  < div className = "flex items-center flex-wrap gap-x-6 gap-y-2 mt-4 justify-end" >
-    {
-      [
-      { col: HEATMAP_COLORS[0], label: '≥85% present' },
-      { col: HEATMAP_COLORS[1], label: '70–84%' },
-      { col: HEATMAP_COLORS[2], label: '<70%' },
-      { bg: '#F5F2EC', text: '#E5DFD5', label: 'Weekend' },
-      { bg: '#FFFFFF', text: '#D6D0C4', label: 'No data yet' },
-          ].map(l => (
-        <div key= { l.label } className = "flex items-center gap-1.5 text-xs text-muted-foreground" >
-        <div className="w-4 h-4 rounded border border-dashed border-border" style = {{ backgroundColor: l.bg || l.col?.bg }} />
-    { l.label }
-    </div>
-          ))}
-</div>
-  </div>
-  </div>
-  )
+
+export async function fetchEmployees(): Promise<Employee[]> {
+  const data = await request<{ employees: any[] }>('/api/employees', { method: 'GET' })
+  return data.employees.map(mapApiEmployee)
+}
+
+export async function fetchEmployeeById(id: string): Promise<Employee> {
+  const data = await request<{ employee: any }>(`/api/employees/${encodeURIComponent(id)}`, { method: 'GET' })
+  return mapApiEmployee(data.employee)
+}
+
+// Self-service profile edit — name, phone, location, photo only (see
+// server/src/routes/employees.js's SELF_EDITABLE_FIELDS; email and every
+// HR-controlled field are deliberately not accepted there).
+export async function updateMyProfile(fields: { name?: string; phone?: string; location?: string; photoUrl?: string }): Promise<Employee> {
+  const data = await request<{ employee: any }>('/api/employees/me', {
+    method: 'PATCH',
+    body: JSON.stringify(fields),
+  })
+  return mapApiEmployee(data.employee)
+}
+
+// Requests a password-setup/reset email for the given email+role — the same
+// generic response whether or not the account actually exists, so this
+// can't be used to probe which emails are registered.
+export async function requestPasswordReset(email: string, role: Role): Promise<void> {
+  await request('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, role }),
+  })
+}
+
+// Finishes a Supabase-hosted password reset (see Login.tsx and
+// server/src/routes/auth.js's /sync-password) — accessToken here is the one
+// Supabase put in the URL after the person clicked the emailed link, proving
+// they control that email. Saves the new password into our own employees
+// table (what /login actually checks) and returns just their name — no
+// session token, since we deliberately don't know which of their roles they
+// meant to sign in as; they pick that on the ordinary sign-in screen next.
+export async function syncPasswordFromSupabase(accessToken: string, newPassword: string): Promise<{ name: string }> {
+  return request('/api/auth/sync-password', {
+    method: 'POST',
+    body: JSON.stringify({ accessToken, newPassword }),
+  })
+}
+
+// A few aggregate counts shown on the sign-in screen, before anyone's
+// authenticated — no auth token needed (see server/src/routes/public.js).
+export interface PublicStats {
+  employees: number
+  companies: number
+  openTickets: number
+  activeExits: number
+}
+
+export async function fetchPublicStats(): Promise<PublicStats> {
+  return request<PublicStats>('/api/public/stats', { method: 'GET' })
+}
+
+// ─────────────────────── Leave requests ───────────────────────
+// The backend's leave_requests table (server/src/routes/resources.js, a
+// generic CRUD router) only stores employee_id — not the employee's name or
+// department, which the frontend's LeaveRequest type wants for display.
+// App.tsx fills those in from the already-loaded employee directory, so the
+// raw shape here is LeaveRequest minus those two fields, plus whatever's
+// left after that substitution stays the same. startDate/endDate/appliedOn
+// come back from Postgres as full timestamps (DATE/TIMESTAMPTZ columns
+// serialize through JSON as ISO strings) — App.tsx trims those to
+// YYYY-MM-DD before use.
+export type RawLeaveRequest = Omit<LeaveRequest, 'employeeName' | 'department'> & {
+  decidedBy?: string | null
+  decidedAt?: string | null
+}
+
+export async function fetchLeaveRequests(): Promise<RawLeaveRequest[]> {
+  const data = await request<{ leave_requests: RawLeaveRequest[] }>('/api/leave-requests', { method: 'GET' })
+  return data.leave_requests
+}
+
+export interface NewLeaveRequestInput {
+  employeeId: string
+  type: LeaveRequest['type']
+  startDate: string
+  endDate: string
+  days: number
+  reason: string
+  submittedByRole: Role
+  pendingWith: Role | 'done'
+}
+
+export async function createLeaveRequest(input: NewLeaveRequestInput): Promise<RawLeaveRequest> {
+  const data = await request<{ leave_request: RawLeaveRequest }>('/api/leave-requests', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.leave_request
+}
+
+export async function updateLeaveRequest(
+  id: string,
+  patch: Partial<Pick<RawLeaveRequest, 'status' | 'pendingWith' | 'decidedBy' | 'decidedAt'>>,
+): Promise<RawLeaveRequest> {
+  const data = await request<{ leave_request: RawLeaveRequest }>(`/api/leave-requests/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.leave_request
+}
+
+// ─────────────────────── Payroll records ───────────────────────
+// Same pattern as leave requests above: payroll_records only stores
+// employee_id — not the employee's name or current job title, which the
+// frontend's PayrollRecord type wants for display. App.tsx fills those in
+// from the employee directory. period_start/period_end come back as full
+// timestamps like every other DATE column; App.tsx trims those too.
+//
+// NOTE: periodStart/periodEnd/reimbursements/bonus/otherDeductions need
+// server/sql/03_payroll_payslip_fields_migration.sql run once against the
+// database — the original payroll_records table predates those fields.
+export type RawPayrollRecord = Omit<PayrollRecord, 'employeeName' | 'role'>
+
+export async function fetchPayrollRecords(): Promise<RawPayrollRecord[]> {
+  const data = await request<{ payroll_records: RawPayrollRecord[] }>('/api/payroll-records', { method: 'GET' })
+  return data.payroll_records
+}
+
+export async function createPayrollRecord(input: Omit<RawPayrollRecord, 'id'>): Promise<RawPayrollRecord> {
+  const data = await request<{ payroll_record: RawPayrollRecord }>('/api/payroll-records', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.payroll_record
+}
+
+export async function updatePayrollRecord(id: string, patch: Partial<Omit<RawPayrollRecord, 'id'>>): Promise<RawPayrollRecord> {
+  const data = await request<{ payroll_record: RawPayrollRecord }>(`/api/payroll-records/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.payroll_record
+}
+
+// ─────────────────────── Attendance records ───────────────────────
+// Same pattern again — attendance_records only stores employee_id, not the
+// employee's name; App.tsx fills that in from the employee directory. The
+// `date` column comes back as a full timestamp like every other DATE column
+// (App.tsx trims it to YYYY-MM-DD).
+export type RawAttendanceRecord = Omit<AttendanceRecord, 'employeeName'>
+
+export async function fetchAttendanceRecords(): Promise<RawAttendanceRecord[]> {
+  const data = await request<{ attendance_records: RawAttendanceRecord[] }>('/api/attendance-records', { method: 'GET' })
+  return data.attendance_records
+}
+
+export async function createAttendanceRecord(input: Omit<RawAttendanceRecord, 'id'>): Promise<RawAttendanceRecord> {
+  const data = await request<{ attendance_record: RawAttendanceRecord }>('/api/attendance-records', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.attendance_record
+}
+
+export async function updateAttendanceRecord(id: string, patch: Partial<Omit<RawAttendanceRecord, 'id'>>): Promise<RawAttendanceRecord> {
+  const data = await request<{ attendance_record: RawAttendanceRecord }>(`/api/attendance-records/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.attendance_record
 }
