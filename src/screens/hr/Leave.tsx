@@ -17,7 +17,7 @@ const POLICY = [
 ]
 
 const statusStyle: Record<string, { bg: string; text: string }> = {
-  pending:  { bg: '#FFFBEB', text: '#D97706' },
+  pending: { bg: '#FFFBEB', text: '#D97706' },
   approved: { bg: '#ECFDF5', text: '#059669' },
   rejected: { bg: '#FEF2F2', text: '#DC2626' },
 }
@@ -71,9 +71,13 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
     setFilterStatus('pending')
   }
 
-  // HR sees leaves submitted by managers; management sees leaves submitted by HR
+  // HR sees leaves submitted by managers or employees (crm); management sees
+  // everything, company-wide — the CEO is the top of the chain, and a
+  // request can otherwise get stuck with no one able to act on it (e.g. a
+  // CRM employee's leave routes to whoever holds the "manager" login role;
+  // if no one does, it would never surface anywhere without this).
   const visibleLeaves = role === 'management'
-    ? leaves.filter(l => l.submittedByRole === 'hr' || l.pendingWith === 'management')
+    ? leaves
     : leaves.filter(l => l.submittedByRole === 'manager' || l.pendingWith === 'hr' || l.submittedByRole === 'crm')
 
   const filtered = visibleLeaves.filter(l => filterStatus === 'all' || l.status === filterStatus)
@@ -302,16 +306,16 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
           <div className="p-5">
             <p className="text-xs text-muted-foreground mb-4">Remaining balance for every employee, computed from their approved leave history. Annual allocation: Sick {LEAVE_POLICY.Sick} · Casual {LEAVE_POLICY.Casual} · Earned {LEAVE_POLICY.Earned}.</p>
             <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px]">
-              <thead>
-                <tr className="border-b border-border">
-                  {['Employee', 'Department', `Sick (${LEAVE_POLICY.Sick})`, `Casual (${LEAVE_POLICY.Casual})`, `Earned (${LEAVE_POLICY.Earned})`, 'Total Available', 'Days Taken'].map(h => (
-                    <th key={h} className="pb-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider pr-6">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {computeAllLeaveBalances(employees, leaves).map(bal => (
+              <table className="w-full min-w-[640px]">
+                <thead>
+                  <tr className="border-b border-border">
+                    {['Employee', 'Department', `Sick (${LEAVE_POLICY.Sick})`, `Casual (${LEAVE_POLICY.Casual})`, `Earned (${LEAVE_POLICY.Earned})`, 'Total Available', 'Days Taken'].map(h => (
+                      <th key={h} className="pb-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider pr-6">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {computeAllLeaveBalances(employees, leaves).map(bal => (
                     <tr key={bal.employeeId} className="border-b border-border last:border-0 hover:bg-muted/20">
                       <td className="py-4 pr-6">
                         <div className="flex items-center gap-2.5">
@@ -338,9 +342,9 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
                         <span className="text-sm font-medium" style={{ color: bal.totalTaken > 0 ? '#D97706' : '#9CA3AF' }}>{bal.totalTaken}</span>
                       </td>
                     </tr>
-                ))}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
