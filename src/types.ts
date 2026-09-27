@@ -141,6 +141,7 @@ export interface Flag {
 
 export interface Notification {
   id: string
+  employeeId: string
   type: 'missed-followup' | 'unassigned-lead' | 'pending-payroll' | 'leave-request' | 'flag'
   title: string
   message: string

@@ -8,7 +8,7 @@
 // the user back to the sign-in screen — see restoreSession() below, called
 // once from App.tsx on mount.
 
-import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal, PerformanceReview, TimesheetEntry } from '../types'
+import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal, PerformanceReview, TimesheetEntry, Notification } from '../types'
 
 const TOKEN_KEY = 'parva_auth_token'
 
@@ -513,4 +513,29 @@ export type RawPerformanceReview = Omit<PerformanceReview, 'employeeName' | 'rol
 export async function fetchPerformanceReviews(): Promise<RawPerformanceReview[]> {
   const data = await request<{ performance_reviews: RawPerformanceReview[] }>('/api/performance-reviews', { method: 'GET' })
   return data.performance_reviews
+}
+
+// ─────────────────────── Notifications ───────────────────────
+// notifications.employee_id is NOT NULL — every notification belongs to one
+// employee — but the frontend's Notification type never had an employeeId
+// field at all (it was mock-only data, so nothing needed to scope it). It's
+// added there now so this can filter to "my own notifications" like a real
+// per-employee inbox. created_at (DB, server-set) is spelled `timestamp` on
+// the frontend type — a naming translation like receiptFilename/
+// receiptFileName elsewhere in this file. Nothing in the app creates a
+// notification yet (no screen has a "new notification" flow) — only
+// mark-as-read exists — so there's no create function here, just fetch/update.
+export type RawNotification = Omit<Notification, 'timestamp'> & { createdAt: string }
+
+export async function fetchNotifications(): Promise<RawNotification[]> {
+  const data = await request<{ notifications: RawNotification[] }>('/api/notifications', { method: 'GET' })
+  return data.notifications
+}
+
+export async function updateNotification(id: string, patch: Partial<Pick<RawNotification, 'read'>>): Promise<RawNotification> {
+  const data = await request<{ notification: RawNotification }>(`/api/notifications/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.notification
 }

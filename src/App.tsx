@@ -151,6 +151,16 @@ function requisitionFieldsOf(r: JobRequisition): Omit<api.RawJobRequisition, 'id
   return out as Omit<api.RawJobRequisition, 'id'>
 }
 
+// created_at/timestamp is deliberately excluded — it's server-set on create
+// and this screen never creates a notification, only patches `read`.
+const NOTIFICATION_FIELDS = ['employeeId', 'type', 'title', 'message', 'read', 'priority'] as const
+
+function notificationFieldsOf(n: Notification): Omit<api.RawNotification, 'id' | 'createdAt'> {
+  const out: Record<string, unknown> = {}
+  for (const f of NOTIFICATION_FIELDS) out[f] = (n as unknown as Record<string, unknown>)[f] ?? null
+  return out as Omit<api.RawNotification, 'id' | 'createdAt'>
+}
+
 // Onboarding candidate as used across the (loosely-typed) Onboarding screens.
 interface OnboardingCandidate {
   id: string
@@ -226,7 +236,12 @@ export default function App() {
   const [rawReviews, setRawReviews] = useState<api.RawPerformanceReview[]>([])
   const [reviewsLoaded, setReviewsLoaded] = useState(false)
   const [onboarding, setOnboarding] = useState<OnboardingCandidate[]>(mockData.onboardingCandidates)
-  const [notifications, setNotifications] = useState<Notification[]>(mockData.notifications)
+  // Notifications are real now too — see rawNotifications/notifications
+  // below. Nothing in the app creates one yet (no screen has a "new
+  // notification" flow) — only mark-as-read exists — so this only ever
+  // fetches and PATCHes, never POSTs.
+  const [rawNotifications, setRawNotifications] = useState<api.RawNotification[]>([])
+  const [notificationsLoaded, setNotificationsLoaded] = useState(false)
 
   const onEmployeesUpdate = (next: Employee[]) => { setEmployees(next) }
 
@@ -549,7 +564,39 @@ export default function App() {
       })()
   }
   const onOnboardingUpdate = (next: OnboardingCandidate[]) => { setOnboarding(next) }
-  const onNotificationsUpdate = (next: Notification[]) => { setNotifications(next) }
+  // Same generic diff-and-sync approach as the other modules — in practice
+  // only `read` ever changes (see Notifications.tsx's markRead/markAllRead),
+  // and nothing ever adds a new id from this screen, but this stays
+  // general-shaped like every other handler here rather than a one-off.
+  const onNotificationsUpdate = (next: Notification[]) => {
+    const prevById = new Map(notifications.map(n => [n.id, n]))
+    const created = next.filter(n => !prevById.has(n.id))
+    const updated = next.filter(n => {
+      const prev = prevById.get(n.id)
+      return prev && JSON.stringify(notificationFieldsOf(prev)) !== JSON.stringify(notificationFieldsOf(n))
+    })
+
+    setRawNotifications(next.map(n => ({ id: n.id, createdAt: n.timestamp, ...notificationFieldsOf(n) } as api.RawNotification)))
+
+      ; (async () => {
+        try {
+          for (const n of updated) {
+            await api.updateNotification(n.id, { read: n.read })
+          }
+          if (created.length > 0) {
+            console.error('Notifications has no create endpoint wired up — new notification ids were ignored', created)
+          }
+        } catch (err) {
+          console.error('Failed to save a notification change to the server', err)
+        } finally {
+          try {
+            setRawNotifications(await api.fetchNotifications())
+          } catch {
+            // Offline/unreachable — stay on the optimistic state.
+          }
+        }
+      })()
+  }
 
   const navigate = (s: string, p?: Record<string, string>) => { setScreen(s); setParams(p || {}) }
 
@@ -600,6 +647,8 @@ export default function App() {
     setGoalsLoaded(false)
     setRawReviews([])
     setReviewsLoaded(false)
+    setRawNotifications([])
+    setNotificationsLoaded(false)
     setScreen('hr-dashboard')
   }
 
@@ -843,6 +892,23 @@ export default function App() {
     return () => { cancelled = true }
   }, [role, reviewsLoaded])
 
+  // Same pattern, for notifications.
+  useEffect(() => {
+    if (!role || notificationsLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchNotifications()
+          if (!cancelled) setRawNotifications(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setNotificationsLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, notificationsLoaded])
+
   if (checkingSession) return null
 
   if (!role) return <Login onLogin={handleLogin} />
@@ -1009,6 +1075,15 @@ export default function App() {
       finalRating: r.finalRating != null ? Number(r.finalRating) : undefined,
     }
   })
+
+  // Same idea — notifications.employee_id is a real per-employee scope now
+  // (see api.ts), so this only ever surfaces the signed-in person's own
+  // notifications, never anyone else's. created_at is spelled `timestamp`
+  // on the frontend type and formatted the same friendly way as a ticket
+  // comment's timestamp.
+  const notifications: Notification[] = rawNotifications
+    .filter(n => n.employeeId === currentEmployeeId)
+    .map(n => ({ ...n, id: String(n.id), timestamp: formatCommentAt(n.createdAt) }))
 
   const unreadCount = notifications.filter(n => !n.read).length
   const sharedLeaveProps = { leaves, onLeaveUpdate }
