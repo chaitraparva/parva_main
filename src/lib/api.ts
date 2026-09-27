@@ -8,7 +8,7 @@
 // the user back to the sign-in screen — see restoreSession() below, called
 // once from App.tsx on mount.
 
-import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord } from '../types'
+import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord, JobRequisition, Candidate } from '../types'
 
 const TOKEN_KEY = 'parva_auth_token'
 
@@ -427,4 +427,41 @@ export async function updateExitRecord(id: string, patch: Partial<Omit<RawExitRe
     body: JSON.stringify(patch),
   })
   return data.exit_record
+}
+
+// ─────────────────────── Job requisitions & candidates ───────────────────────
+// job_requisitions.id is a client-supplied TEXT primary key (unlike every
+// other table above, which is server-assigned BIGSERIAL) — createJobRequisition
+// must send an id, and the frontend generates it (App.tsx). `applicants` is
+// NOT a database column at all — it's a live count of candidates whose
+// requisitionId matches, computed in App.tsx from the candidates list, so
+// it's excluded here.
+export type RawJobRequisition = Omit<JobRequisition, 'applicants'>
+
+export async function fetchJobRequisitions(): Promise<RawJobRequisition[]> {
+  const data = await request<{ job_requisitions: RawJobRequisition[] }>('/api/job-requisitions', { method: 'GET' })
+  return data.job_requisitions
+}
+
+export async function createJobRequisition(input: RawJobRequisition): Promise<RawJobRequisition> {
+  const data = await request<{ job_requisition: RawJobRequisition }>('/api/job-requisitions', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.job_requisition
+}
+
+export async function updateJobRequisition(id: string, patch: Partial<Omit<RawJobRequisition, 'id'>>): Promise<RawJobRequisition> {
+  const data = await request<{ job_requisition: RawJobRequisition }>(`/api/job-requisitions/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.job_requisition
+}
+
+// Candidates are read-only from the frontend today (Recruitment.tsx never
+// creates or edits one) — only a fetch function here, matching that.
+export async function fetchCandidates(): Promise<Candidate[]> {
+  const data = await request<{ candidates: Candidate[] }>('/api/candidates', { method: 'GET' })
+  return data.candidates
 }

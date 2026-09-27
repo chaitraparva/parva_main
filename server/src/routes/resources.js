@@ -77,8 +77,11 @@ export const exitRecordsRouter = crudRouter({
 
 export const jobRequisitionsRouter = crudRouter({
   table: 'job_requisitions',
+  // job_requisitions.id is a client-supplied TEXT primary key (not a
+  // BIGSERIAL like every other table here), so 'id' must be an allowed
+  // column or every create would fail a NOT NULL constraint on it.
   allowedColumns: [
-    'title', 'department', 'team', 'openings', 'location', 'employmentType',
+    'id', 'title', 'department', 'team', 'openings', 'location', 'employmentType',
     'status', 'requestedBy', 'approvedBy', 'postedOn', 'channels', 'startDate',
     'targetCloseDate', 'ctcRange',
   ],

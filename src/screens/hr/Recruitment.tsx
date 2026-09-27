@@ -57,10 +57,10 @@ interface RecruitmentProps {
   onRequisitionsUpdate: (next: JobRequisition[]) => void
   candidates: Candidate[]
   currentEmployee?: Employee
+  employees: Employee[]
 }
 
-export default function Recruitment({ requisitions, onRequisitionsUpdate, candidates, currentEmployee }: RecruitmentProps) {
-  const hrName = currentEmployee?.name || 'HR'
+export default function Recruitment({ requisitions, onRequisitionsUpdate, candidates, currentEmployee, employees }: RecruitmentProps) {
   const [tab, setTab] = useState<'requisitions' | 'pipeline'>('requisitions')
   const [reqs, setReqsLocal] = useState<JobRequisition[]>(requisitions)
   useEffect(() => { setReqsLocal(requisitions) }, [requisitions])
@@ -71,12 +71,26 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, candid
       return next
     })
   }
-  const [cands] = useState<Candidate[]>(candidates)
+  // Candidates are read-only from this screen (no create/edit UI), so this
+  // uses the `candidates` prop directly rather than copying it into local
+  // state — the old `useState(candidates)` copy never updated once
+  // candidates arrived from an async fetch after this screen had already
+  // mounted, which would have left the pipeline permanently empty.
+  const cands = candidates
   const [showAddForm, setShowAddForm] = useState(false)
   const [newReq, setNewReq] = useState(NEW_REQ_DEFAULT)
 
+  // job_requisitions.requested_by/approved_by are foreign keys to
+  // employees(id) — they must store a real employee id, never a display
+  // name (the same bug class fixed earlier for expense_claims.approved_by).
+  // This resolves an id back to a name for display.
+  const employeeName = (id?: string) => {
+    if (!id) return undefined
+    return employees.find(e => e.id === id)?.name || id
+  }
+
   const setReqStatus = (id: string, status: RequisitionStatus) => {
-    setReqs(prev => prev.map(r => r.id === id ? { ...r, status, approvedBy: status === 'Approved' ? hrName : r.approvedBy } : r))
+    setReqs(prev => prev.map(r => r.id === id ? { ...r, status, approvedBy: status === 'Approved' ? currentEmployee?.id : r.approvedBy } : r))
   }
 
   const addRequisition = () => {
@@ -90,7 +104,7 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, candid
       location: newReq.location,
       employmentType: newReq.employmentType,
       status: 'Pending Approval',
-      requestedBy: hrName,
+      requestedBy: currentEmployee?.id || '',
       channels: newReq.channels.split(',').map(c => c.trim()).filter(Boolean),
       applicants: 0,
       startDate: newReq.startDate,
@@ -232,65 +246,65 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, candid
       {tab === 'requisitions' ? (
         <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px]">
-            <thead>
-              <tr className="border-b border-border">
-                {['Role', 'Department', 'Openings', 'Location', 'Channels', 'Applicants', 'Start Date', 'Target Close', 'CTC', 'Status', 'Actions'].map(h => (
-                  <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-widest text-muted-foreground">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {reqs.map((r, i) => {
-                const sc = reqStatusColor[r.status]
-                return (
-                  <tr key={r.id} className={`border-b border-border last:border-0 hover:bg-muted/40 transition-colors ${i % 2 === 0 ? '' : 'bg-muted/10'}`}>
-                    <td className="px-5 py-4">
-                      <p className="text-sm font-semibold text-foreground">{r.title}</p>
-                      <p className="text-xs text-muted-foreground">{r.team} · {r.employmentType}</p>
-                    </td>
-                    <td className="px-5 py-4 text-xs text-foreground">{r.department}</td>
-                    <td className="px-5 py-4 text-sm font-semibold text-foreground">{r.openings}</td>
-                    <td className="px-5 py-4 text-xs text-muted-foreground">{r.location}</td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-wrap gap-1 max-w-[160px]">
-                        {r.channels.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
-                        {r.channels.map(ch => (
-                          <span key={ch} className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: '#F0EDE7', color: '#7A7065' }}>{ch}</span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 text-sm font-semibold text-foreground">{r.applicants}</td>
-                    <td className="px-5 py-4 text-xs text-muted-foreground whitespace-nowrap">{r.startDate}</td>
-                    <td className="px-5 py-4 text-xs text-muted-foreground whitespace-nowrap">{r.targetCloseDate}</td>
-                    <td className="px-5 py-4 text-xs font-medium text-foreground whitespace-nowrap">{r.ctcRange}</td>
-                    <td className="px-5 py-4">
-                      <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: sc.bg, color: sc.text }}>{r.status}</span>
-                      {r.approvedBy && <p className="text-[10px] text-muted-foreground mt-0.5">by {r.approvedBy}</p>}
-                    </td>
-                    <td className="px-5 py-4">
-                      {r.status === 'Pending Approval' ? (
-                        <div className="flex items-center gap-1.5">
-                          <button onClick={() => setReqStatus(r.id, 'Approved')}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
-                            style={{ backgroundColor: '#ECFDF5', color: '#059669' }}>
-                            <Check size={11} /> Approve
-                          </button>
-                          <button onClick={() => setReqStatus(r.id, 'On Hold')}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all"
-                            style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
-                            <X size={11} /> Hold
-                          </button>
+            <table className="w-full min-w-[980px]">
+              <thead>
+                <tr className="border-b border-border">
+                  {['Role', 'Department', 'Openings', 'Location', 'Channels', 'Applicants', 'Start Date', 'Target Close', 'CTC', 'Status', 'Actions'].map(h => (
+                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-widest text-muted-foreground">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {reqs.map((r, i) => {
+                  const sc = reqStatusColor[r.status]
+                  return (
+                    <tr key={r.id} className={`border-b border-border last:border-0 hover:bg-muted/40 transition-colors ${i % 2 === 0 ? '' : 'bg-muted/10'}`}>
+                      <td className="px-5 py-4">
+                        <p className="text-sm font-semibold text-foreground">{r.title}</p>
+                        <p className="text-xs text-muted-foreground">{r.team} · {r.employmentType}</p>
+                      </td>
+                      <td className="px-5 py-4 text-xs text-foreground">{r.department}</td>
+                      <td className="px-5 py-4 text-sm font-semibold text-foreground">{r.openings}</td>
+                      <td className="px-5 py-4 text-xs text-muted-foreground">{r.location}</td>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-wrap gap-1 max-w-[160px]">
+                          {r.channels.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                          {r.channels.map(ch => (
+                            <span key={ch} className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: '#F0EDE7', color: '#7A7065' }}>{ch}</span>
+                          ))}
                         </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-5 py-4 text-sm font-semibold text-foreground">{r.applicants}</td>
+                      <td className="px-5 py-4 text-xs text-muted-foreground whitespace-nowrap">{r.startDate}</td>
+                      <td className="px-5 py-4 text-xs text-muted-foreground whitespace-nowrap">{r.targetCloseDate}</td>
+                      <td className="px-5 py-4 text-xs font-medium text-foreground whitespace-nowrap">{r.ctcRange}</td>
+                      <td className="px-5 py-4">
+                        <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: sc.bg, color: sc.text }}>{r.status}</span>
+                        {r.approvedBy && <p className="text-[10px] text-muted-foreground mt-0.5">by {employeeName(r.approvedBy)}</p>}
+                      </td>
+                      <td className="px-5 py-4">
+                        {r.status === 'Pending Approval' ? (
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => setReqStatus(r.id, 'Approved')}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                              style={{ backgroundColor: '#ECFDF5', color: '#059669' }}>
+                              <Check size={11} /> Approve
+                            </button>
+                            <button onClick={() => setReqStatus(r.id, 'On Hold')}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all"
+                              style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+                              <X size={11} /> Hold
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       ) : (

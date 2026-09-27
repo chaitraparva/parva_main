@@ -136,6 +136,21 @@ function exitFieldsOf(r: ExitRecord): Omit<api.RawExitRecord, 'id'> {
   return out as Omit<api.RawExitRecord, 'id'>
 }
 
+// `applicants` is deliberately excluded — it's not a database column at all,
+// just a live count of candidates derived below, so it's never sent to the
+// server (see api.ts's RawJobRequisition).
+const REQUISITION_FIELDS = [
+  'title', 'department', 'team', 'openings', 'location', 'employmentType',
+  'status', 'requestedBy', 'approvedBy', 'postedOn', 'channels', 'startDate',
+  'targetCloseDate', 'ctcRange',
+] as const
+
+function requisitionFieldsOf(r: JobRequisition): Omit<api.RawJobRequisition, 'id'> {
+  const out: Record<string, unknown> = {}
+  for (const f of REQUISITION_FIELDS) out[f] = (r as unknown as Record<string, unknown>)[f] ?? null
+  return out as Omit<api.RawJobRequisition, 'id'>
+}
+
 // Onboarding candidate as used across the (loosely-typed) Onboarding screens.
 interface OnboardingCandidate {
   id: string
@@ -190,8 +205,14 @@ export default function App() {
   // Exit records are real now too — see rawExits/exits below.
   const [rawExits, setRawExits] = useState<api.RawExitRecord[]>([])
   const [exitsLoaded, setExitsLoaded] = useState(false)
-  const [requisitions, setRequisitions] = useState<JobRequisition[]>(mockData.jobRequisitions)
-  const [candidates, setCandidates] = useState<Candidate[]>(mockData.candidates)
+  // Job requisitions and candidates are real now too — see
+  // rawRequisitions/requisitions and rawCandidates/candidates below.
+  // Candidates have no create/update UI anywhere in the app, so they're
+  // only ever fetched, never diffed/synced like the other modules.
+  const [rawRequisitions, setRawRequisitions] = useState<api.RawJobRequisition[]>([])
+  const [requisitionsLoaded, setRequisitionsLoaded] = useState(false)
+  const [rawCandidates, setRawCandidates] = useState<Candidate[]>([])
+  const [candidatesLoaded, setCandidatesLoaded] = useState(false)
   const [goals, setGoals] = useState<PerformanceGoal[]>(mockData.performanceGoals)
   const [reviews, setReviews] = useState<PerformanceReview[]>(mockData.performanceReviews)
   const [onboarding, setOnboarding] = useState<OnboardingCandidate[]>(mockData.onboardingCandidates)
@@ -456,7 +477,39 @@ export default function App() {
         }
       })()
   }
-  const onRequisitionsUpdate = (next: JobRequisition[]) => { setRequisitions(next) }
+  // Same generic diff-and-sync approach as onExitsUpdate above.
+  // job_requisitions.id is a client-supplied TEXT primary key (Recruitment.tsx
+  // generates it as `req-${Date.now()}`), so unlike every other create()
+  // call, this one has to send the id explicitly.
+  const onRequisitionsUpdate = (next: JobRequisition[]) => {
+    const prevById = new Map(requisitions.map(r => [r.id, r]))
+    const created = next.filter(r => !prevById.has(r.id))
+    const updated = next.filter(r => {
+      const prev = prevById.get(r.id)
+      return prev && JSON.stringify(requisitionFieldsOf(prev)) !== JSON.stringify(requisitionFieldsOf(r))
+    })
+
+    setRawRequisitions(next.map(r => ({ id: r.id, ...requisitionFieldsOf(r) } as api.RawJobRequisition)))
+
+      ; (async () => {
+        try {
+          for (const r of created) {
+            await api.createJobRequisition({ id: r.id, ...requisitionFieldsOf(r) })
+          }
+          for (const r of updated) {
+            await api.updateJobRequisition(r.id, requisitionFieldsOf(r))
+          }
+        } catch (err) {
+          console.error('Failed to save a job requisition change to the server', err)
+        } finally {
+          try {
+            setRawRequisitions(await api.fetchJobRequisitions())
+          } catch {
+            // Offline/unreachable — stay on the optimistic state.
+          }
+        }
+      })()
+  }
   const onOnboardingUpdate = (next: OnboardingCandidate[]) => { setOnboarding(next) }
   const onNotificationsUpdate = (next: Notification[]) => { setNotifications(next) }
 
@@ -499,6 +552,10 @@ export default function App() {
     setTicketCommentsLoaded(false)
     setRawExits([])
     setExitsLoaded(false)
+    setRawRequisitions([])
+    setRequisitionsLoaded(false)
+    setRawCandidates([])
+    setCandidatesLoaded(false)
     setScreen('hr-dashboard')
   }
 
@@ -657,6 +714,40 @@ export default function App() {
     return () => { cancelled = true }
   }, [role, exitsLoaded])
 
+  // Same pattern, for job requisitions.
+  useEffect(() => {
+    if (!role || requisitionsLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchJobRequisitions()
+          if (!cancelled) setRawRequisitions(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setRequisitionsLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, requisitionsLoaded])
+
+  // Same pattern, for candidates (read-only — see rawCandidates above).
+  useEffect(() => {
+    if (!role || candidatesLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchCandidates()
+          if (!cancelled) setRawCandidates(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setCandidatesLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, candidatesLoaded])
+
   if (checkingSession) return null
 
   if (!role) return <Login onLogin={handleLogin} />
@@ -763,6 +854,32 @@ export default function App() {
     }
   })
 
+  // candidates.id/resume_score come back as BIGINT/INTEGER — id needs the
+  // usual String() coercion; resume_score is already a number. Dates are
+  // trimmed the same way as every other TIMESTAMPTZ column above.
+  const candidates: Candidate[] = rawCandidates.map(c => ({
+    ...c,
+    id: String(c.id),
+    appliedOn: toDateOnly(c.appliedOn),
+    interviewDate: c.interviewDate ? toDateOnly(c.interviewDate) : undefined,
+  }))
+
+  // job_requisitions doesn't store `applicants` at all — it's computed live
+  // here from how many candidates point at each requisition, rather than
+  // being a stored (and therefore staleness-prone) column. start_date/
+  // target_close_date are DATE columns and posted_on is TIMESTAMPTZ — like
+  // every other date column in this app, Postgres serializes those as full
+  // ISO timestamps, so they're trimmed to YYYY-MM-DD the same way (the
+  // screen displays these raw, so without this they'd show a full
+  // timestamp instead of a clean date).
+  const requisitions: JobRequisition[] = rawRequisitions.map(r => ({
+    ...r,
+    startDate: toDateOnly(r.startDate),
+    targetCloseDate: toDateOnly(r.targetCloseDate),
+    postedOn: r.postedOn ? toDateOnly(r.postedOn) : undefined,
+    applicants: candidates.filter(c => c.requisitionId === r.id).length,
+  }))
+
   const unreadCount = notifications.filter(n => !n.read).length
   const sharedLeaveProps = { leaves, onLeaveUpdate }
   const sharedExpenseProps = { expenses, onExpensesUpdate }
@@ -830,7 +947,7 @@ export default function App() {
           />
         )
       case 'recruitment':
-        return <Recruitment requisitions={requisitions} onRequisitionsUpdate={onRequisitionsUpdate} candidates={candidates} currentEmployee={currentEmployee} />
+        return <Recruitment requisitions={requisitions} onRequisitionsUpdate={onRequisitionsUpdate} candidates={candidates} currentEmployee={currentEmployee} employees={employees} />
       case 'performance':
         return <Performance goals={goals} reviews={reviews} />
       case 'directory':
