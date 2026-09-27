@@ -273,11 +273,11 @@ export async function updateAttendanceRecord(id: string, patch: Partial<Omit<Raw
 
 // ─────────────────────── Expense claims ───────────────────────
 // Same pattern again — expense_claims stores employee_id, not the
-// employee's name/department. It also has no column at all for the actual
-// receipt IMAGE (receiptDataUrl): the schema only keeps receipt_s3_key/
-// receipt_filename, meant for a real file-storage upload (S3/Supabase
-// Storage) that hasn't been built yet — so a receipt photo is visible only
-// for the current session and is lost on refresh until that's added.
+// employee's name/department. The receipt photo itself is NOT a plain
+// column — it lives in Supabase Storage, uploaded/fetched through the
+// separate expense-receipts endpoints below (uploadExpenseReceipt /
+// fetchExpenseReceiptDownloadUrl); this type only carries the resulting
+// receipt_s3_key/receipt_filename pointer, not the image data.
 // claimed_on is server-set (DB default now()) and isn't in allowedColumns,
 // so it's read-only here — never sent on create/update. Note the column is
 // receipt_filename (camelCased receiptFilename) — the frontend's
@@ -306,4 +306,40 @@ export async function updateExpenseClaim(id: string, patch: Partial<Omit<RawExpe
     body: JSON.stringify(patch),
   })
   return data.expense_claim
+}
+
+// ---- Expense receipt photos (real backend storage — Supabase Storage) ----
+// Reads a File as base64 (stripping the "data:...;base64," prefix) so it can
+// travel as plain JSON to the backend, which does the actual Storage write —
+// avoids needing a Supabase anon key on the frontend.
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      const commaIndex = result.indexOf(',')
+      resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result)
+    }
+    reader.onerror = () => reject(reader.error || new Error('Could not read the file.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+export async function uploadExpenseReceipt(claimId: string, file: File): Promise<{ receiptS3Key: string; receiptFilename: string }> {
+  const dataBase64 = await fileToBase64(file)
+  return request<{ receiptS3Key: string; receiptFilename: string }>(`/api/expense-receipts/${encodeURIComponent(claimId)}`, {
+    method: 'POST',
+    body: JSON.stringify({ filename: file.name, contentType: file.type, dataBase64 }),
+  })
+}
+
+// Pass downloadFilename to get a link that forces a browser download with
+// that filename (via Supabase Storage's own `download` signed-URL option)
+// instead of one meant just for inline viewing.
+export async function fetchExpenseReceiptDownloadUrl(claimId: string, downloadFilename?: string): Promise<string> {
+  const query = downloadFilename ? `?download=${encodeURIComponent(downloadFilename)}` : ''
+  const data = await request<{ downloadUrl: string }>(`/api/expense-receipts/${encodeURIComponent(claimId)}/download-url${query}`, {
+    method: 'GET',
+  })
+  return data.downloadUrl
 }

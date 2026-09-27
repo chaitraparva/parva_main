@@ -153,6 +153,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
       // id, so there's no way to attach one before the claim exists there.
       // This bypasses the generic onExpensesUpdate diff path on purpose:
       // that path can create claims but has no way to also push a file.
+      const receiptFailures: string[] = []
       for (const r of rows) {
         const created = await api.createExpenseClaim({
           employeeId,
@@ -167,6 +168,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
             await api.uploadExpenseReceipt(created.id, r.file)
           } catch (err) {
             console.error('Claim was saved, but its receipt photo failed to upload', err)
+            receiptFailures.push(err instanceof Error ? err.message : 'Unknown error')
           }
         }
       }
@@ -174,8 +176,14 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
       rows.forEach(r => { if (r.previewUrl) URL.revokeObjectURL(r.previewUrl) })
       setRows([blankRow()])
       setShowExpenseForm(false)
-      setExpenseFlash(`Submitted ${rows.length} expense claim${rows.length !== 1 ? 's' : ''} — pending approval.`)
-      setTimeout(() => setExpenseFlash(''), 4000)
+      if (receiptFailures.length > 0) {
+        // Claims themselves are saved either way — only surface the receipt
+        // problem, so it's never silently lost like before.
+        setExpenseError(`Submitted, but ${receiptFailures.length} receipt photo${receiptFailures.length !== 1 ? 's' : ''} failed to upload: ${receiptFailures[0]}`)
+      } else {
+        setExpenseFlash(`Submitted ${rows.length} expense claim${rows.length !== 1 ? 's' : ''} — pending approval.`)
+        setTimeout(() => setExpenseFlash(''), 4000)
+      }
     } catch (err) {
       console.error('Failed to submit the expense sheet', err)
       setExpenseError('Something went wrong while submitting. Please try again.')

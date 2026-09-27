@@ -23,10 +23,11 @@ interface Props {
   onPayrollUpdate: (next: PayrollRecord[]) => void
   expenses: ExpenseClaim[]
   onExpensesUpdate: (next: ExpenseClaim[]) => void
+  employees: Employee[]
   currentEmployee?: Employee
 }
 
-export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, expenses, onExpensesUpdate, currentEmployee }: Props) {
+export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, expenses, onExpensesUpdate, employees, currentEmployee }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
 
   // Payroll sign-off — HR processes a record, then it lands here for
@@ -161,32 +162,32 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
               <p className="text-sm text-muted-foreground">No payroll records awaiting sign-off.</p>
             ) : (
               <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[520px]">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                    <th className="pb-2 font-medium">Employee</th>
-                    <th className="pb-2 font-medium">Role</th>
-                    <th className="pb-2 font-medium">Month</th>
-                    <th className="pb-2 font-medium">Net Pay</th>
-                    <th className="pb-2 font-medium">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingPayroll.map(r => (
-                    <tr key={r.id} className="border-b border-border hover:bg-muted/20">
-                      <td className="py-2.5 font-medium">{r.employeeName}</td>
-                      <td className="py-2.5 capitalize">{r.role}</td>
-                      <td className="py-2.5 text-muted-foreground">{r.month}</td>
-                      <td className="py-2.5 font-bold" style={{ color: navy }}>₹{r.netPay.toLocaleString('en-IN')}</td>
-                      <td className="py-2.5">
-                        <button onClick={() => signOff(r.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: navy }}>
-                          Sign Off
-                        </button>
-                      </td>
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                      <th className="pb-2 font-medium">Employee</th>
+                      <th className="pb-2 font-medium">Role</th>
+                      <th className="pb-2 font-medium">Month</th>
+                      <th className="pb-2 font-medium">Net Pay</th>
+                      <th className="pb-2 font-medium">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {pendingPayroll.map(r => (
+                      <tr key={r.id} className="border-b border-border hover:bg-muted/20">
+                        <td className="py-2.5 font-medium">{r.employeeName}</td>
+                        <td className="py-2.5 capitalize">{r.role}</td>
+                        <td className="py-2.5 text-muted-foreground">{r.month}</td>
+                        <td className="py-2.5 font-bold" style={{ color: navy }}>₹{r.netPay.toLocaleString('en-IN')}</td>
+                        <td className="py-2.5">
+                          <button onClick={() => signOff(r.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: navy }}>
+                            Sign Off
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -195,26 +196,26 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Disbursed Records</h2>
               <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[520px]">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                    <th className="pb-2 font-medium">Employee</th>
-                    <th className="pb-2 font-medium">Role</th>
-                    <th className="pb-2 font-medium">Net Pay</th>
-                    <th className="pb-2 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {disbursedPayroll.map(r => (
-                    <tr key={r.id} className="border-b border-border hover:bg-muted/20">
-                      <td className="py-2.5">{r.employeeName}</td>
-                      <td className="py-2.5 capitalize">{r.role}</td>
-                      <td className="py-2.5 font-medium">₹{r.netPay.toLocaleString('en-IN')}</td>
-                      <td className="py-2.5"><StatusBadge status={r.status} /></td>
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                      <th className="pb-2 font-medium">Employee</th>
+                      <th className="pb-2 font-medium">Role</th>
+                      <th className="pb-2 font-medium">Net Pay</th>
+                      <th className="pb-2 font-medium">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {disbursedPayroll.map(r => (
+                      <tr key={r.id} className="border-b border-border hover:bg-muted/20">
+                        <td className="py-2.5">{r.employeeName}</td>
+                        <td className="py-2.5 capitalize">{r.role}</td>
+                        <td className="py-2.5 font-medium">₹{r.netPay.toLocaleString('en-IN')}</td>
+                        <td className="py-2.5"><StatusBadge status={r.status} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -257,35 +258,35 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
               <p className="text-sm text-muted-foreground">No expense claims are waiting on reimbursement.</p>
             ) : (
               <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[560px]">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                    <th className="pb-2 font-medium">Employee</th>
-                    <th className="pb-2 font-medium">Category</th>
-                    <th className="pb-2 font-medium">Description</th>
-                    <th className="pb-2 font-medium">Amount</th>
-                    <th className="pb-2 font-medium">Approved By</th>
-                    <th className="pb-2 font-medium">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {awaitingReimbursement.map(c => (
-                    <tr key={c.id} className="border-b border-border hover:bg-muted/20">
-                      <td className="py-2.5 font-medium" style={{ color: navy }}>{c.employeeName}</td>
-                      <td className="py-2.5">{c.category}</td>
-                      <td className="py-2.5 text-muted-foreground max-w-[220px] truncate">{c.description}</td>
-                      <td className="py-2.5 font-bold" style={{ color: navy }}>₹{c.amount.toLocaleString('en-IN')}</td>
-                      <td className="py-2.5 text-muted-foreground">{c.approvedBy || '—'}</td>
-                      <td className="py-2.5">
-                        <button onClick={() => reimburse(c.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90" style={{ background: navy }}>
-                          <DollarSign size={12} /> Reimburse
-                        </button>
-                      </td>
+                <table className="w-full text-sm min-w-[560px]">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                      <th className="pb-2 font-medium">Employee</th>
+                      <th className="pb-2 font-medium">Category</th>
+                      <th className="pb-2 font-medium">Description</th>
+                      <th className="pb-2 font-medium">Amount</th>
+                      <th className="pb-2 font-medium">Approved By</th>
+                      <th className="pb-2 font-medium">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {awaitingReimbursement.map(c => (
+                      <tr key={c.id} className="border-b border-border hover:bg-muted/20">
+                        <td className="py-2.5 font-medium" style={{ color: navy }}>{c.employeeName}</td>
+                        <td className="py-2.5">{c.category}</td>
+                        <td className="py-2.5 text-muted-foreground max-w-[220px] truncate">{c.description}</td>
+                        <td className="py-2.5 font-bold" style={{ color: navy }}>₹{c.amount.toLocaleString('en-IN')}</td>
+                        <td className="py-2.5 text-muted-foreground">{(c.approvedBy && (employees.find(e => e.id === c.approvedBy)?.name || c.approvedBy)) || '—'}</td>
+                        <td className="py-2.5">
+                          <button onClick={() => reimburse(c.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90" style={{ background: navy }}>
+                            <DollarSign size={12} /> Reimburse
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -294,26 +295,26 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Reimbursed</h2>
               <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[520px]">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                    <th className="pb-2 font-medium">Employee</th>
-                    <th className="pb-2 font-medium">Category</th>
-                    <th className="pb-2 font-medium">Amount</th>
-                    <th className="pb-2 font-medium">Reimbursed On</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reimbursedClaims.map(c => (
-                    <tr key={c.id} className="border-b border-border hover:bg-muted/20">
-                      <td className="py-2.5">{c.employeeName}</td>
-                      <td className="py-2.5">{c.category}</td>
-                      <td className="py-2.5 font-medium">₹{c.amount.toLocaleString('en-IN')}</td>
-                      <td className="py-2.5 text-muted-foreground">{c.reimbursedOn || '—'}</td>
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                      <th className="pb-2 font-medium">Employee</th>
+                      <th className="pb-2 font-medium">Category</th>
+                      <th className="pb-2 font-medium">Amount</th>
+                      <th className="pb-2 font-medium">Reimbursed On</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {reimbursedClaims.map(c => (
+                      <tr key={c.id} className="border-b border-border hover:bg-muted/20">
+                        <td className="py-2.5">{c.employeeName}</td>
+                        <td className="py-2.5">{c.category}</td>
+                        <td className="py-2.5 font-medium">₹{c.amount.toLocaleString('en-IN')}</td>
+                        <td className="py-2.5 text-muted-foreground">{c.reimbursedOn || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

@@ -12,6 +12,11 @@ export const leaveRequestsRouter = crudRouter({
     'employeeId', 'type', 'startDate', 'endDate', 'days', 'reason',
     'status', 'submittedByRole', 'pendingWith', 'decidedBy', 'decidedAt',
   ],
+  // Anyone can submit their own leave request (POST); only a manager/HR/
+  // management can move it to approved/rejected (PATCH) — without this, any
+  // signed-in employee could approve their own leave request by calling the
+  // API directly, since no screen ever lets an employee PATCH their own row.
+  updateRoles: ['manager', 'hr', 'management'],
 })
 
 export const payrollRecordsRouter = crudRouter({
@@ -27,6 +32,9 @@ export const payrollRecordsRouter = crudRouter({
 export const attendanceRouter = crudRouter({
   table: 'attendance_records',
   allowedColumns: ['employeeId', 'date', 'checkIn', 'checkOut', 'status'],
+  // Only HR/manager/management ever mark attendance (see AttendanceHR.tsx —
+  // no employee-facing screen creates or edits their own attendance row).
+  writeRoles: ['manager', 'hr', 'management'],
 })
 
 export const expenseClaimsRouter = crudRouter({
@@ -35,6 +43,12 @@ export const expenseClaimsRouter = crudRouter({
     'employeeId', 'date', 'description', 'category', 'amount',
     'receiptS3Key', 'receiptFilename', 'status', 'approvedBy', 'reimbursedOn', 'note',
   ],
+  // Anyone can submit their own expense claim (POST); only a manager (for
+  // their own team, in ManagerPortal), HR, management or finance can
+  // approve, reject or reimburse one (PATCH) — without this, any signed-in
+  // employee could approve their own claim by calling the API directly,
+  // regardless of what the UI shows them.
+  updateRoles: ['manager', 'hr', 'management', 'finance'],
 })
 
 export const ticketsRouter = crudRouter({

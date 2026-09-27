@@ -20,10 +20,21 @@ import { asyncHandler } from './async-handler.js'
  * the same way auth.js's login route encodes the real login rules instead
  * of leaving them generic. Treat this as the data-access layer underneath
  * that business logic, not a replacement for it.
+ *
+ * writeRoles gates POST only (or both POST and PATCH, if updateRoles is
+ * left unset — this is the historical/default behaviour, kept for tables
+ * that don't need the two to differ). Pass updateRoles separately whenever
+ * "who may create a row" and "who may change it afterward" are genuinely
+ * different — e.g. any employee can submit their own expense claim (POST),
+ * but only HR/management/finance may approve, reject or reimburse one
+ * (PATCH). Without this split, leaving writeRoles unset to keep creation
+ * open also leaves PATCH open to everyone — meaning any signed-in employee
+ * could approve their own (or anyone else's) pending request by calling the
+ * API directly, even if the UI never shows them that option.
  */
-export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles }) {
+export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles, updateRoles }) {
   // Read stays open to any signed-in user; only writes are role-gated
-  // (see writeGuard below).
+  // (see writeGuard/updateGuard below).
   const router = Router()
   router.use(requireAuth)
 
@@ -44,6 +55,9 @@ export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles 
   }))
 
   const writeGuard = writeRoles ? [requireRole(...writeRoles)] : []
+  // Falls back to writeGuard when updateRoles isn't given, so every table
+  // that didn't opt into the split keeps its existing behaviour exactly.
+  const updateGuard = updateRoles ? [requireRole(...updateRoles)] : writeGuard
 
   router.post('/', ...writeGuard, asyncHandler(async (req, res) => {
     const body = pick(req.body, allowedColumns)
@@ -57,7 +71,7 @@ export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles 
     res.status(201).json({ [singular(table)]: toCamel(rows[0]) })
   }))
 
-  router.patch('/:id', ...writeGuard, asyncHandler(async (req, res) => {
+  router.patch('/:id', ...updateGuard, asyncHandler(async (req, res) => {
     const body = pick(req.body, allowedColumns)
     if (Object.keys(body).length === 0) return res.status(400).json({ error: 'No valid fields supplied.' })
     const snake = toSnake(body)

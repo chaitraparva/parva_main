@@ -59,7 +59,7 @@ interface Props {
 }
 
 export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetch, employees, currentEmployee }: Props) {
-  const approverName = currentEmployee?.name || 'HR'
+  const approverId = currentEmployee?.id
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterCategory, setFilterCategory] = useState<string>('all')
   const [noteMap, setNoteMap] = useState<Record<string, string>>({})
@@ -67,6 +67,7 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetc
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [preview, setPreview] = useState<{ claim: ExpenseClaim; url: string; isPlaceholder: boolean } | null>(null)
   const [zippingId, setZippingId] = useState<string | null>(null)
@@ -92,11 +93,13 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetc
     setUploadTargetId(null)
     if (file && targetId) {
       setUploadingId(targetId)
+      setUploadError(null)
       try {
         await api.uploadExpenseReceipt(targetId, file)
         await onExpensesRefetch()
       } catch (err) {
         console.error('Failed to upload the receipt photo', err)
+        setUploadError(err instanceof Error ? err.message : 'Failed to upload the receipt photo.')
       } finally {
         setUploadingId(null)
       }
@@ -136,9 +139,22 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetc
     onExpensesUpdate(expenses.map(c => c.id === id ? { ...c, ...patch } : c))
   }
 
+  // approvedBy must be the approver's real employee id, not their display
+  // name — the database column is a foreign key into employees(id), so a
+  // name string here silently fails to save (approved_by REFERENCES
+  // employees(id) in schema.sql), which is why "Approve" used to flash
+  // approved for a moment and then bounce back to Pending: the update was
+  // rejected by the database, and the follow-up refetch restored the real,
+  // unchanged row. See employeeApproverName() below for how the name is
+  // shown back to the user from this id.
   const approve = (c: ExpenseClaim) => {
-    update(c.id, { status: 'Approved', approvedBy: approverName })
+    update(c.id, { status: 'Approved', approvedBy: approverId })
     setShowNoteFor(null)
+  }
+
+  const employeeApproverName = (id?: string) => {
+    if (!id) return ''
+    return employees.find(e => e.id === id)?.name || id
   }
 
   const reject = (c: ExpenseClaim) => {
@@ -237,6 +253,15 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetc
           Export All to Excel
         </button>
       </div>
+
+      {uploadError && (
+        <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2.5">
+          <span>{uploadError}</span>
+          <button onClick={() => setUploadError(null)} className="text-red-700 hover:text-red-900" aria-label="Dismiss">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Summary KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -420,7 +445,7 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetc
                               </td>
                               <td className="px-5 py-4">
                                 <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: sc.bg, color: sc.text }}>{c.status}</span>
-                                {c.approvedBy && <p className="text-[10px] text-muted-foreground mt-0.5">by {c.approvedBy}</p>}
+                                {c.approvedBy && <p className="text-[10px] text-muted-foreground mt-0.5">by {employeeApproverName(c.approvedBy)}</p>}
                                 {c.reimbursedOn && <p className="text-[10px] text-muted-foreground">{c.reimbursedOn}</p>}
                               </td>
                               <td className="px-5 py-4">

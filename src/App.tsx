@@ -9,6 +9,7 @@ import * as api from './lib/api'
 import type { Session } from './lib/api'
 import Login from './screens/Login'
 import Layout from './components/layout/Layout'
+import { NAV_BY_ROLE } from './components/layout/Sidebar'
 
 import HRDashboard from './screens/hr/HRDashboard'
 import Directory from './screens/hr/Directory'
@@ -39,6 +40,20 @@ const DEFAULT_SCREEN: Record<Role, string> = {
   management: 'mgmt-portal',
   finance: 'finance-portal',
 }
+
+// Every screen a role is actually allowed to open — the same ids that
+// role's sidebar can navigate to, plus the few screens every role shares
+// (notifications/settings/profile aren't in the sidebar's per-role nav list
+// but every role can reach them). This is a defense-in-depth guard: even if
+// `screen` state ever ends up holding a screen id the current role has no
+// button for (a stale value, a bug elsewhere), renderScreen() below falls
+// back to that role's own default rather than rendering it — so a
+// review/approval screen meant for HR/management can never be shown to a
+// CRM/employee login just because `screen` happened to hold its id.
+const SHARED_SCREENS = ['notifications', 'settings', 'profile']
+const ALLOWED_SCREENS: Record<Role, Set<string>> = Object.fromEntries(
+  (Object.keys(NAV_BY_ROLE) as Role[]).map(r => [r, new Set([...NAV_BY_ROLE[r].map(i => i.id), ...SHARED_SCREENS])])
+) as Record<Role, Set<string>>
 
 // Postgres DATE/TIMESTAMPTZ columns serialize through JSON as full ISO
 // strings (e.g. "2026-01-15T00:00:00.000Z") — trimmed to the plain
@@ -540,8 +555,15 @@ export default function App() {
   const employeeId = currentEmployeeId || ''
   const currentEmployee = employees.find(e => e.id === employeeId)
 
+  // See ALLOWED_SCREENS above — never render (or highlight/title) a screen
+  // this role has no sidebar entry for, no matter how `screen` state got
+  // set to it. Used both for the switch below and for what's handed to
+  // Layout, so the sidebar highlight and page title never disagree with
+  // what's actually on screen.
+  const effectiveScreen = ALLOWED_SCREENS[role].has(screen) ? screen : DEFAULT_SCREEN[role]
+
   const renderScreen = () => {
-    switch (screen) {
+    switch (effectiveScreen) {
       case 'my-portal':
         return (
           <MyPortal
@@ -579,6 +601,7 @@ export default function App() {
           <FinancePortal
             payroll={payroll} onPayrollUpdate={onPayrollUpdate}
             {...sharedExpenseProps}
+            employees={employees}
             currentEmployee={currentEmployee}
           />
         )
@@ -629,7 +652,7 @@ export default function App() {
   }
 
   return (
-    <Layout role={role} screen={screen} onNavigate={navigate} onLogout={handleLogout} unreadCount={unreadCount} currentEmployee={currentEmployee}>
+    <Layout role={role} screen={effectiveScreen} onNavigate={navigate} onLogout={handleLogout} unreadCount={unreadCount} currentEmployee={currentEmployee}>
       {renderScreen()}
     </Layout>
   )
