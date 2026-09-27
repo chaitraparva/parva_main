@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type {
   Role, LeaveRequest, Employee, ExpenseClaim, PayrollRecord, AttendanceRecord,
   EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal,
-  PerformanceReview, Notification, TimesheetEntry,
+  PerformanceReview, Notification, TimesheetEntry, Lead, ActivityType,
 } from './types'
 import * as mockData from './data/mockData'
 import * as api from './lib/api'
@@ -27,7 +27,9 @@ import Settings from './screens/Settings'
 import Profile from './screens/Profile'
 import OrgChart from './screens/OrgChart'
 import MyPortal from './screens/crm/MyPortal'
+import MyLeads from './screens/crm/MyLeads'
 import MyTimesheet from './screens/crm/MyTimesheet'
+import TeamLeads from './screens/hr/TeamLeads'
 import TeamTimesheet from './screens/hr/TeamTimesheet'
 import ManagerPortal from './screens/manager/ManagerPortal'
 import MgmtPortal from './screens/management/MgmtPortal'
@@ -161,6 +163,20 @@ function notificationFieldsOf(n: Notification): Omit<api.RawNotification, 'id' |
   return out as Omit<api.RawNotification, 'id' | 'createdAt'>
 }
 
+// `activities` is deliberately excluded — it lives in its own table
+// (lead_activities), not a column on leads, same as ticket comments.
+// createdAt is server-set on create and never sent again after that.
+const LEAD_FIELDS = [
+  'name', 'phone', 'email', 'source', 'status', 'assignedTo', 'agentName',
+  'budget', 'propertyType', 'location', 'followUpDate', 'notes', 'lastActivity',
+] as const
+
+function leadFieldsOf(l: Lead): Omit<api.RawLead, 'id' | 'createdAt'> {
+  const out: Record<string, unknown> = {}
+  for (const f of LEAD_FIELDS) out[f] = (l as unknown as Record<string, unknown>)[f] ?? null
+  return out as Omit<api.RawLead, 'id' | 'createdAt'>
+}
+
 // Onboarding candidate as used across the (loosely-typed) Onboarding screens.
 interface OnboardingCandidate {
   id: string
@@ -242,6 +258,13 @@ export default function App() {
   // fetches and PATCHes, never POSTs.
   const [rawNotifications, setRawNotifications] = useState<api.RawNotification[]>([])
   const [notificationsLoaded, setNotificationsLoaded] = useState(false)
+  // Leads are real now too — see rawLeads/leads below. A lead's activity
+  // log lives in its own table (lead_activities), fetched separately and
+  // grouped in by leadId, same pattern as ticket comments.
+  const [rawLeads, setRawLeads] = useState<api.RawLead[]>([])
+  const [leadsLoaded, setLeadsLoaded] = useState(false)
+  const [rawLeadActivities, setRawLeadActivities] = useState<api.RawLeadActivity[]>([])
+  const [leadActivitiesLoaded, setLeadActivitiesLoaded] = useState(false)
 
   const onEmployeesUpdate = (next: Employee[]) => { setEmployees(next) }
 
@@ -598,6 +621,64 @@ export default function App() {
       })()
   }
 
+  // Same generic diff-and-sync approach as onExitsUpdate/onRequisitionsUpdate
+  // above. leads.id is a client-supplied TEXT primary key (MyLeads.tsx
+  // generates it as `lead-${Date.now()}`, same as job requisitions), so
+  // create() has to send the id explicitly.
+  const onLeadsUpdate = (next: Lead[]) => {
+    const prevById = new Map(leads.map(l => [l.id, l]))
+    const created = next.filter(l => !prevById.has(l.id))
+    const updated = next.filter(l => {
+      const prev = prevById.get(l.id)
+      return prev && JSON.stringify(leadFieldsOf(prev)) !== JSON.stringify(leadFieldsOf(l))
+    })
+
+    setRawLeads(next.map(l => ({ id: l.id, createdAt: l.createdAt, ...leadFieldsOf(l) } as api.RawLead)))
+
+      ; (async () => {
+        try {
+          for (const l of created) {
+            await api.createLead({ id: l.id, createdAt: l.createdAt, ...leadFieldsOf(l) } as api.RawLead)
+          }
+          for (const l of updated) {
+            await api.updateLead(l.id, leadFieldsOf(l))
+          }
+        } catch (err) {
+          console.error('Failed to save a lead change to the server', err)
+        } finally {
+          try {
+            setRawLeads(await api.fetchLeads())
+          } catch {
+            // Offline/unreachable — stay on the optimistic state.
+          }
+        }
+      })()
+  }
+  // Adding an activity never goes through onLeadsUpdate above — activities
+  // live in their own table, not a column on leads (same reasoning as
+  // addTicketComment) — so this posts directly and refetches both the
+  // activities and the lead itself (the server also bumps that lead's
+  // last_activity timestamp when an activity is logged, so leads needs a
+  // refetch too, not just lead_activities).
+  const addLeadActivity = async (leadId: string, type: ActivityType, description: string) => {
+    try {
+      await api.createLeadActivity(leadId, type, description)
+    } catch (err) {
+      console.error('Failed to save a lead activity to the server', err)
+    } finally {
+      try {
+        setRawLeadActivities(await api.fetchLeadActivities())
+      } catch {
+        // Offline/unreachable — stay on whatever's already shown.
+      }
+      try {
+        setRawLeads(await api.fetchLeads())
+      } catch {
+        // Offline/unreachable — stay on whatever's already shown.
+      }
+    }
+  }
+
   const navigate = (s: string, p?: Record<string, string>) => { setScreen(s); setParams(p || {}) }
 
   // Applies a freshly-signed-in (or session-restored) employee into local
@@ -649,6 +730,10 @@ export default function App() {
     setReviewsLoaded(false)
     setRawNotifications([])
     setNotificationsLoaded(false)
+    setRawLeads([])
+    setLeadsLoaded(false)
+    setRawLeadActivities([])
+    setLeadActivitiesLoaded(false)
     setScreen('hr-dashboard')
   }
 
@@ -909,6 +994,40 @@ export default function App() {
     return () => { cancelled = true }
   }, [role, notificationsLoaded])
 
+  // Same pattern, for leads.
+  useEffect(() => {
+    if (!role || leadsLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchLeads()
+          if (!cancelled) setRawLeads(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setLeadsLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, leadsLoaded])
+
+  // Same pattern, for lead activities (a separate table — see api.ts).
+  useEffect(() => {
+    if (!role || leadActivitiesLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchLeadActivities()
+          if (!cancelled) setRawLeadActivities(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setLeadActivitiesLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, leadActivitiesLoaded])
+
   if (checkingSession) return null
 
   if (!role) return <Login onLogin={handleLogin} />
@@ -1085,6 +1204,22 @@ export default function App() {
     .filter(n => n.employeeId === currentEmployeeId)
     .map(n => ({ ...n, id: String(n.id), timestamp: formatCommentAt(n.createdAt) }))
 
+  // Same idea — leads doesn't need an employee-name join (agentName is
+  // already a real column, kept in sync with assignedTo whenever a lead is
+  // created or reassigned), but its activity log comes from a completely
+  // separate fetch (see rawLeadActivities above), grouped in here by
+  // leadId rather than living in this array, same as tickets' comments.
+  const leads: Lead[] = rawLeads.map(r => ({
+    ...r,
+    id: String(r.id),
+    createdAt: toDateOnly(r.createdAt),
+    lastActivity: toDateOnly(r.lastActivity),
+    activities: rawLeadActivities
+      .filter(a => String(a.leadId) === String(r.id))
+      .map(a => ({ id: String(a.id), type: a.type, description: a.description, by: a.byName, timestamp: formatCommentAt(a.createdAt) })),
+  }))
+  const myLeads = leads.filter(l => l.assignedTo === currentEmployeeId)
+
   const unreadCount = notifications.filter(n => !n.read).length
   const sharedLeaveProps = { leaves, onLeaveUpdate }
   const sharedExpenseProps = { expenses, onExpensesUpdate }
@@ -1112,6 +1247,16 @@ export default function App() {
             attendance={attendance}
           />
         )
+      case 'my-leads':
+        return (
+          <MyLeads
+            leads={myLeads}
+            employeeId={employeeId}
+            currentEmployee={currentEmployee}
+            onLeadsUpdate={onLeadsUpdate}
+            onAddActivity={addLeadActivity}
+          />
+        )
       case 'manager-portal':
         return (
           <ManagerPortal
@@ -1122,6 +1267,8 @@ export default function App() {
             payroll={payroll} onPayrollUpdate={onPayrollUpdate}
           />
         )
+      case 'team-leads':
+        return <TeamLeads leads={leads} employees={employees} onLeadsUpdate={onLeadsUpdate} />
       case 'mgmt-portal':
         return (
           <MgmtPortal

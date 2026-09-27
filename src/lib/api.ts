@@ -8,7 +8,7 @@
 // the user back to the sign-in screen — see restoreSession() below, called
 // once from App.tsx on mount.
 
-import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal, PerformanceReview, TimesheetEntry, Notification } from '../types'
+import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal, PerformanceReview, TimesheetEntry, Notification, Lead } from '../types'
 
 const TOKEN_KEY = 'parva_auth_token'
 
@@ -538,4 +538,57 @@ export async function updateNotification(id: string, patch: Partial<Pick<RawNoti
     body: JSON.stringify(patch),
   })
   return data.notification
+}
+
+// ─────────────────────── Leads (CRM) ───────────────────────
+// leads.id is a client-supplied TEXT primary key (like job_requisitions,
+// not a BIGSERIAL) — createLead has to send an id, and the frontend
+// generates it. A lead's activity log (calls, emails, notes, site visits,
+// WhatsApp) lives in its own table (lead_activities), not a column on
+// leads — the same relational-list pattern used for ticket comments. The
+// server derives who logged an activity from the signed-in session, never
+// from the request body.
+export type RawLead = Omit<Lead, 'activities'>
+
+export async function fetchLeads(): Promise<RawLead[]> {
+  const data = await request<{ leads: RawLead[] }>('/api/leads', { method: 'GET' })
+  return data.leads
+}
+
+export async function createLead(input: RawLead): Promise<RawLead> {
+  const data = await request<{ lead: RawLead }>('/api/leads', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.lead
+}
+
+export async function updateLead(id: string, patch: Partial<Omit<RawLead, 'id'>>): Promise<RawLead> {
+  const data = await request<{ lead: RawLead }>(`/api/leads/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.lead
+}
+
+export interface RawLeadActivity {
+  id: string
+  leadId: string
+  type: 'call' | 'email' | 'note' | 'site-visit' | 'whatsapp'
+  description: string
+  byName: string
+  createdAt: string
+}
+
+export async function fetchLeadActivities(): Promise<RawLeadActivity[]> {
+  const data = await request<{ lead_activities: RawLeadActivity[] }>('/api/lead-activities', { method: 'GET' })
+  return data.lead_activities
+}
+
+export async function createLeadActivity(leadId: string, type: RawLeadActivity['type'], description: string): Promise<RawLeadActivity> {
+  const data = await request<{ lead_activity: RawLeadActivity }>('/api/lead-activities', {
+    method: 'POST',
+    body: JSON.stringify({ leadId, type, description }),
+  })
+  return data.lead_activity
 }

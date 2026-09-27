@@ -137,8 +137,11 @@ export const notificationsRouter = crudRouter({
 
 export const leadsRouter = crudRouter({
   table: 'leads',
+  // leads.id is a client-supplied TEXT primary key (like job_requisitions
+  // above, not a BIGSERIAL) — 'id' has to be an allowed column or every
+  // create would fail a NOT NULL constraint on it.
   allowedColumns: [
-    'name', 'phone', 'email', 'source', 'status', 'assignedTo', 'agentName',
+    'id', 'name', 'phone', 'email', 'source', 'status', 'assignedTo', 'agentName',
     'budget', 'propertyType', 'location', 'followUpDate', 'notes', 'lastActivity',
   ],
 })
