@@ -8,7 +8,7 @@
 // the user back to the sign-in screen — see restoreSession() below, called
 // once from App.tsx on mount.
 
-import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket } from '../types'
+import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord } from '../types'
 
 const TOKEN_KEY = 'parva_auth_token'
 
@@ -398,4 +398,33 @@ export async function createTicketComment(ticketId: string, body: string): Promi
     body: JSON.stringify({ ticketId, body }),
   })
   return data.ticket_comment
+}
+
+// ─────────────────────── Exit records ───────────────────────
+// Same pattern again — exit_records stores employee_id, not the employee's
+// name/department/role. clearanceChecklist IS a real column now (JSONB) —
+// unlike ticket comments, it's a small fixed-shape list per record that
+// only ever gets its items toggled, not added to independently, so it
+// didn't need a separate table.
+export type RawExitRecord = Omit<ExitRecord, 'employeeName' | 'department' | 'role'>
+
+export async function fetchExitRecords(): Promise<RawExitRecord[]> {
+  const data = await request<{ exit_records: RawExitRecord[] }>('/api/exit-records', { method: 'GET' })
+  return data.exit_records
+}
+
+export async function createExitRecord(input: Omit<RawExitRecord, 'id'>): Promise<RawExitRecord> {
+  const data = await request<{ exit_record: RawExitRecord }>('/api/exit-records', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.exit_record
+}
+
+export async function updateExitRecord(id: string, patch: Partial<Omit<RawExitRecord, 'id'>>): Promise<RawExitRecord> {
+  const data = await request<{ exit_record: RawExitRecord }>(`/api/exit-records/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.exit_record
 }

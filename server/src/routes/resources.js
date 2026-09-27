@@ -70,6 +70,7 @@ export const exitRecordsRouter = crudRouter({
   allowedColumns: [
     'employeeId', 'exitType', 'resignationDate', 'lastWorkingDay', 'noticePeriodDays',
     'status', 'exitInterviewDone', 'fnfAmount', 'fnfStatus', 'reason', 'rehireEligible',
+    'clearanceChecklist',
   ],
   writeRoles: ['hr', 'management'],
 })

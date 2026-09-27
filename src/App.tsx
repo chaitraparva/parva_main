@@ -124,6 +124,18 @@ function ticketFieldsOf(t: EmployeeTicket): Omit<api.RawEmployeeTicket, 'id' | '
   return out as Omit<api.RawEmployeeTicket, 'id' | 'raisedOn' | 'updatedAt'>
 }
 
+const EXIT_FIELDS = [
+  'employeeId', 'exitType', 'resignationDate', 'lastWorkingDay', 'noticePeriodDays',
+  'status', 'exitInterviewDone', 'fnfAmount', 'fnfStatus', 'reason', 'rehireEligible',
+  'clearanceChecklist',
+] as const
+
+function exitFieldsOf(r: ExitRecord): Omit<api.RawExitRecord, 'id'> {
+  const out: Record<string, unknown> = {}
+  for (const f of EXIT_FIELDS) out[f] = (r as unknown as Record<string, unknown>)[f] ?? null
+  return out as Omit<api.RawExitRecord, 'id'>
+}
+
 // Onboarding candidate as used across the (loosely-typed) Onboarding screens.
 interface OnboardingCandidate {
   id: string
@@ -175,7 +187,9 @@ export default function App() {
   const [ticketsLoaded, setTicketsLoaded] = useState(false)
   const [rawTicketComments, setRawTicketComments] = useState<api.RawTicketComment[]>([])
   const [ticketCommentsLoaded, setTicketCommentsLoaded] = useState(false)
-  const [exits, setExits] = useState<ExitRecord[]>(mockData.exitRecords)
+  // Exit records are real now too — see rawExits/exits below.
+  const [rawExits, setRawExits] = useState<api.RawExitRecord[]>([])
+  const [exitsLoaded, setExitsLoaded] = useState(false)
   const [requisitions, setRequisitions] = useState<JobRequisition[]>(mockData.jobRequisitions)
   const [candidates, setCandidates] = useState<Candidate[]>(mockData.candidates)
   const [goals, setGoals] = useState<PerformanceGoal[]>(mockData.performanceGoals)
@@ -409,7 +423,39 @@ export default function App() {
       }
     }
   }
-  const onExitsUpdate = (next: ExitRecord[]) => { setExits(next) }
+  // Same generic diff-and-sync approach as onPayrollUpdate/onAttendanceUpdate
+  // — clearanceChecklist is a real JSONB column (see exitFieldsOf/EXIT_FIELDS
+  // above), so toggling one of its items is just another field change here,
+  // not a separate table like ticket comments needed.
+  const onExitsUpdate = (next: ExitRecord[]) => {
+    const prevById = new Map(exits.map(r => [r.id, r]))
+    const created = next.filter(r => !prevById.has(r.id))
+    const updated = next.filter(r => {
+      const prev = prevById.get(r.id)
+      return prev && JSON.stringify(exitFieldsOf(prev)) !== JSON.stringify(exitFieldsOf(r))
+    })
+
+    setRawExits(next.map(r => ({ id: r.id, ...exitFieldsOf(r) } as api.RawExitRecord)))
+
+      ; (async () => {
+        try {
+          for (const r of created) {
+            await api.createExitRecord(exitFieldsOf(r))
+          }
+          for (const r of updated) {
+            await api.updateExitRecord(r.id, exitFieldsOf(r))
+          }
+        } catch (err) {
+          console.error('Failed to save an exit record change to the server', err)
+        } finally {
+          try {
+            setRawExits(await api.fetchExitRecords())
+          } catch {
+            // Offline/unreachable — stay on the optimistic state.
+          }
+        }
+      })()
+  }
   const onRequisitionsUpdate = (next: JobRequisition[]) => { setRequisitions(next) }
   const onOnboardingUpdate = (next: OnboardingCandidate[]) => { setOnboarding(next) }
   const onNotificationsUpdate = (next: Notification[]) => { setNotifications(next) }
@@ -451,6 +497,8 @@ export default function App() {
     setTicketsLoaded(false)
     setRawTicketComments([])
     setTicketCommentsLoaded(false)
+    setRawExits([])
+    setExitsLoaded(false)
     setScreen('hr-dashboard')
   }
 
@@ -592,6 +640,23 @@ export default function App() {
     return () => { cancelled = true }
   }, [role, ticketCommentsLoaded])
 
+  // Same pattern, for exit records.
+  useEffect(() => {
+    if (!role || exitsLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchExitRecords()
+          if (!cancelled) setRawExits(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setExitsLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, exitsLoaded])
+
   if (checkingSession) return null
 
   if (!role) return <Login onLogin={handleLogin} />
@@ -678,6 +743,23 @@ export default function App() {
       comments: rawTicketComments
         .filter(c => String(c.ticketId) === String(r.id))
         .map(c => ({ by: c.byName, role: c.byRole, text: c.body, at: formatCommentAt(c.createdAt) })),
+    }
+  })
+
+  // Same idea — exit_records doesn't store the employee's name/department/
+  // role, so those are joined in from the employee directory here.
+  const exits: ExitRecord[] = rawExits.map(r => {
+    const emp = employees.find(e => e.id === r.employeeId)
+    return {
+      ...r,
+      id: String(r.id),
+      employeeName: emp?.name || 'Unknown',
+      role: emp?.role || 'agent',
+      department: emp?.department || '',
+      resignationDate: toDateOnly(r.resignationDate),
+      lastWorkingDay: toDateOnly(r.lastWorkingDay),
+      fnfAmount: r.fnfAmount != null ? Number(r.fnfAmount) : undefined,
+      clearanceChecklist: r.clearanceChecklist || [],
     }
   })
 
@@ -770,7 +852,7 @@ export default function App() {
       case 'onboarding-hr':
         return <OnboardingHR onboarding={onboarding} onOnboardingUpdate={onOnboardingUpdate} />
       case 'exit-management':
-        return <ExitManagement exits={exits} onExitsUpdate={onExitsUpdate} />
+        return <ExitManagement exits={exits} onExitsUpdate={onExitsUpdate} employees={employees} />
       case 'tickets-hr':
         return <TicketsHR {...sharedTicketProps} currentEmployee={currentEmployee} />
       case 'notifications':

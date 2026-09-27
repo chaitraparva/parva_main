@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ExitRecord, ExitType, ExitStatus } from '../../types'
+import type { ExitRecord, ExitType, ExitStatus, Employee } from '../../types'
 import { DoorOpen, Check, Calendar, FileText, Plus, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 
 const navy = '#1C2B4A'
@@ -15,9 +15,7 @@ const statusColor: Record<ExitStatus, { bg: string; text: string }> = {
 const STATUS_FLOW: ExitStatus[] = ['Notice Period', 'Clearance Pending', 'Exit Interview Done', 'Completed']
 
 const NEW_EXIT_DEFAULT = {
-  employeeName: '',
   employeeId: '',
-  department: '',
   exitType: 'Resignation' as ExitType,
   resignationDate: '',
   lastWorkingDay: '',
@@ -28,9 +26,10 @@ const NEW_EXIT_DEFAULT = {
 interface ExitManagementProps {
   exits: ExitRecord[]
   onExitsUpdate: (next: ExitRecord[]) => void
+  employees: Employee[]
 }
 
-export default function ExitManagement({ exits, onExitsUpdate }: ExitManagementProps) {
+export default function ExitManagement({ exits, onExitsUpdate, employees }: ExitManagementProps) {
   const [records, setRecordsLocal] = useState<ExitRecord[]>(exits)
   useEffect(() => { setRecordsLocal(exits) }, [exits])
   const setRecords = (updater: ExitRecord[] | ((prev: ExitRecord[]) => ExitRecord[])) => {
@@ -69,14 +68,23 @@ export default function ExitManagement({ exits, onExitsUpdate }: ExitManagementP
     setRecords(prev => prev.map(r => r.id !== recordId ? r : { ...r, fnfStatus: 'Processed' }))
   }
 
+  // Only real employees who don't already have an active (non-completed)
+  // exit in progress can be picked — exit_records.employee_id is a foreign
+  // key into the real employees table, so this can no longer be free-text
+  // with a made-up id (that used to work only because it lived in memory
+  // and was never actually saved anywhere).
+  const employeesWithActiveExit = new Set(records.filter(r => r.status !== 'Completed').map(r => r.employeeId))
+  const eligibleEmployees = employees.filter(e => e.status !== 'inactive' && !employeesWithActiveExit.has(e.id))
+
   const addExit = () => {
-    if (!form.employeeName || !form.resignationDate || !form.lastWorkingDay) return
+    const employee = employees.find(e => e.id === form.employeeId)
+    if (!employee || !form.resignationDate || !form.lastWorkingDay) return
     const newRecord: ExitRecord = {
       id: `exit-${Date.now()}`,
-      employeeId: `emp-new-${Date.now()}`,
-      employeeName: form.employeeName,
-      role: 'agent',
-      department: form.department || 'Sales',
+      employeeId: employee.id,
+      employeeName: employee.name,
+      role: employee.role,
+      department: employee.department,
       exitType: form.exitType,
       resignationDate: form.resignationDate,
       lastWorkingDay: form.lastWorkingDay,
@@ -292,17 +300,15 @@ export default function ExitManagement({ exits, onExitsUpdate }: ExitManagementP
         <div className="bg-card rounded-xl border border-border shadow-sm p-6">
           <h3 className="font-serif text-lg font-semibold text-foreground mb-4">Initiate New Exit</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Employee Name *</label>
-              <input value={form.employeeName} onChange={e => setForm(p => ({ ...p, employeeName: e.target.value }))}
-                placeholder="Full name"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none focus:ring-1 focus:ring-accent/40" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Department</label>
-              <input value={form.department} onChange={e => setForm(p => ({ ...p, department: e.target.value }))}
-                placeholder="e.g. Sales"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none focus:ring-1 focus:ring-accent/40" />
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Employee *</label>
+              <select value={form.employeeId} onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none">
+                <option value="">Select an employee…</option>
+                {eligibleEmployees.map(e => (
+                  <option key={e.id} value={e.id}>{e.name}{e.department ? ` — ${e.department}` : ''}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Exit Type</label>

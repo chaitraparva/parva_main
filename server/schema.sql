@@ -211,7 +211,10 @@ CREATE TABLE exit_records (
   fnf_amount          NUMERIC(12, 2),
   fnf_status          TEXT CHECK (fnf_status IN ('Pending', 'Processed')),
   reason              TEXT,
-  rehire_eligible     BOOLEAN
+  rehire_eligible     BOOLEAN,
+  -- A small, fixed-shape checklist (laptop return, access revocation, etc.)
+  -- HR ticks off during offboarding — see sql/04_exit_clearance_checklist_migration.sql.
+  clearance_checklist JSONB NOT NULL DEFAULT '[]'::jsonb
 );
 
 CREATE TABLE exit_clearance_items (
