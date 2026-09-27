@@ -15,6 +15,7 @@ import {
   leaveRequestsRouter,
   payrollRecordsRouter,
   attendanceRouter,
+  timesheetEntriesRouter,
   expenseClaimsRouter,
   ticketsRouter,
   exitRecordsRouter,
@@ -62,6 +63,7 @@ app.use('/api/expense-receipts', expenseReceiptsRouter)
 app.use('/api/leave-requests', leaveRequestsRouter)
 app.use('/api/payroll-records', payrollRecordsRouter)
 app.use('/api/attendance-records', attendanceRouter)
+app.use('/api/timesheet-entries', timesheetEntriesRouter)
 app.use('/api/expense-claims', expenseClaimsRouter)
 app.use('/api/tickets', ticketsRouter)
 app.use('/api/ticket-comments', ticketCommentsRouter)
