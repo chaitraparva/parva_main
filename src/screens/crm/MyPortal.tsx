@@ -3,7 +3,7 @@ import type { ChangeEvent } from 'react'
 import type { LeaveRequest, ExpenseClaim, EmployeeTicket, ExpenseCategory, TicketType, TicketPriority, AttendanceRecord, Employee } from '../../types'
 import { Upload, X, FileSpreadsheet, Plus, Trash2, Eye } from 'lucide-react'
 import { downloadExcel } from '../../lib/excel'
-import { readFileAsDataUrl } from '../../lib/files'
+import * as api from '../../lib/api'
 import { computeLeaveBalance, LEAVE_POLICY } from '../../lib/leaveBalance'
 import DocumentsPanel from '../../components/DocumentsPanel'
 
@@ -48,6 +48,7 @@ interface Props {
   onLeaveUpdate: (l: LeaveRequest[]) => void
   expenses: ExpenseClaim[]
   onExpensesUpdate: (e: ExpenseClaim[]) => void
+  onExpensesRefetch: () => Promise<void>
   employeeId: string
   employees: Employee[]
   attendance: AttendanceRecord[]
@@ -69,7 +70,7 @@ function blankRow(): DraftRow {
   return { id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, date: '', category: 'Travel', description: '', amount: '', file: null, previewUrl: null }
 }
 
-export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate, employeeId, employees, attendance: attendanceRecords, tickets, onTicketsUpdate }: Props) {
+export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate: _onExpensesUpdate, onExpensesRefetch, employeeId, employees, attendance: attendanceRecords, tickets, onTicketsUpdate }: Props) {
   const [tab, setTab] = useState<Tab>('leave')
   const [leaveFlash, setLeaveFlash] = useState(false)
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '' })
@@ -146,33 +147,51 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
     setExpenseError('')
     setSubmitting(true)
     try {
-      const claimedOn = new Date().toISOString().slice(0, 10)
-      const newClaims: ExpenseClaim[] = await Promise.all(rows.map(async (r) => {
-        const receiptDataUrl = r.file ? await readFileAsDataUrl(r.file) : undefined
-        return {
-          id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      // Create each claim for real first (the server assigns its actual
+      // id), then upload that row's receipt photo against the real id —
+      // receipts live in Supabase Storage now, keyed by the claim's database
+      // id, so there's no way to attach one before the claim exists there.
+      // This bypasses the generic onExpensesUpdate diff path on purpose:
+      // that path can create claims but has no way to also push a file.
+      for (const r of rows) {
+        const created = await api.createExpenseClaim({
           employeeId,
-          employeeName: meName,
-          department: meDepartment,
           date: r.date,
           description: r.description.trim(),
           category: r.category,
           amount: parseFloat(r.amount),
-          receipt: !!r.file,
-          receiptFileName: r.file?.name,
-          receiptDataUrl,
           status: 'Pending',
-          claimedOn,
+        })
+        if (r.file) {
+          try {
+            await api.uploadExpenseReceipt(created.id, r.file)
+          } catch (err) {
+            console.error('Claim was saved, but its receipt photo failed to upload', err)
+          }
         }
-      }))
-      onExpensesUpdate([...newClaims, ...expenses])
+      }
+      await onExpensesRefetch()
       rows.forEach(r => { if (r.previewUrl) URL.revokeObjectURL(r.previewUrl) })
       setRows([blankRow()])
       setShowExpenseForm(false)
-      setExpenseFlash(`Submitted ${newClaims.length} expense claim${newClaims.length !== 1 ? 's' : ''} — pending approval.`)
+      setExpenseFlash(`Submitted ${rows.length} expense claim${rows.length !== 1 ? 's' : ''} — pending approval.`)
       setTimeout(() => setExpenseFlash(''), 4000)
+    } catch (err) {
+      console.error('Failed to submit the expense sheet', err)
+      setExpenseError('Something went wrong while submitting. Please try again.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  // Receipts live in Supabase Storage now, not as a data URL on the claim —
+  // fetch a short-lived signed link on demand and open it.
+  async function viewReceipt(claimId: string) {
+    try {
+      const url = await api.fetchExpenseReceiptDownloadUrl(claimId)
+      window.open(url, '_blank')
+    } catch (err) {
+      console.error('Failed to open the receipt', err)
     }
   }
 
@@ -372,30 +391,30 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
               <p className="text-sm text-muted-foreground">No leave requests found.</p>
             ) : (
               <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[520px]">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                    <th className="pb-2 font-medium">Type</th>
-                    <th className="pb-2 font-medium">From</th>
-                    <th className="pb-2 font-medium">To</th>
-                    <th className="pb-2 font-medium">Days</th>
-                    <th className="pb-2 font-medium">Reason</th>
-                    <th className="pb-2 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {myLeaves.map(l => (
-                    <tr key={l.id} className="border-b border-border hover:bg-muted/20">
-                      <td className="py-2.5">{l.type}</td>
-                      <td className="py-2.5">{l.startDate}</td>
-                      <td className="py-2.5">{l.endDate}</td>
-                      <td className="py-2.5">{l.days}</td>
-                      <td className="py-2.5 max-w-[200px] truncate">{l.reason}</td>
-                      <td className="py-2.5"><StatusBadge status={l.status} /></td>
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                      <th className="pb-2 font-medium">Type</th>
+                      <th className="pb-2 font-medium">From</th>
+                      <th className="pb-2 font-medium">To</th>
+                      <th className="pb-2 font-medium">Days</th>
+                      <th className="pb-2 font-medium">Reason</th>
+                      <th className="pb-2 font-medium">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {myLeaves.map(l => (
+                      <tr key={l.id} className="border-b border-border hover:bg-muted/20">
+                        <td className="py-2.5">{l.type}</td>
+                        <td className="py-2.5">{l.startDate}</td>
+                        <td className="py-2.5">{l.endDate}</td>
+                        <td className="py-2.5">{l.days}</td>
+                        <td className="py-2.5 max-w-[200px] truncate">{l.reason}</td>
+                        <td className="py-2.5"><StatusBadge status={l.status} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -407,37 +426,37 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
         <div className="bg-card rounded-xl border border-border shadow-sm p-5">
           <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>My Attendance</h2>
           <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[520px]">
-            <thead>
-              <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                <th className="pb-2 font-medium">Date</th>
-                <th className="pb-2 font-medium">Check In</th>
-                <th className="pb-2 font-medium">Check Out</th>
-                <th className="pb-2 font-medium">Hours</th>
-                <th className="pb-2 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {myAttendance.map(r => {
-                let hours = '—'
-                if (r.checkIn && r.checkOut) {
-                  const [ih, im] = r.checkIn.split(':').map(Number)
-                  const [oh, om] = r.checkOut.split(':').map(Number)
-                  const diff = (oh * 60 + om) - (ih * 60 + im)
-                  hours = `${Math.floor(diff / 60)}h ${diff % 60}m`
-                }
-                return (
-                  <tr key={r.id} className="border-b border-border hover:bg-muted/20">
-                    <td className="py-2.5">{r.date}</td>
-                    <td className="py-2.5">{r.checkIn || '—'}</td>
-                    <td className="py-2.5">{r.checkOut || '—'}</td>
-                    <td className="py-2.5">{hours}</td>
-                    <td className="py-2.5"><StatusBadge status={r.status} /></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+            <table className="w-full text-sm min-w-[520px]">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                  <th className="pb-2 font-medium">Date</th>
+                  <th className="pb-2 font-medium">Check In</th>
+                  <th className="pb-2 font-medium">Check Out</th>
+                  <th className="pb-2 font-medium">Hours</th>
+                  <th className="pb-2 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {myAttendance.map(r => {
+                  let hours = '—'
+                  if (r.checkIn && r.checkOut) {
+                    const [ih, im] = r.checkIn.split(':').map(Number)
+                    const [oh, om] = r.checkOut.split(':').map(Number)
+                    const diff = (oh * 60 + om) - (ih * 60 + im)
+                    hours = `${Math.floor(diff / 60)}h ${diff % 60}m`
+                  }
+                  return (
+                    <tr key={r.id} className="border-b border-border hover:bg-muted/20">
+                      <td className="py-2.5">{r.date}</td>
+                      <td className="py-2.5">{r.checkIn || '—'}</td>
+                      <td className="py-2.5">{r.checkOut || '—'}</td>
+                      <td className="py-2.5">{hours}</td>
+                      <td className="py-2.5"><StatusBadge status={r.status} /></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -578,43 +597,41 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
 
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
             <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[520px]">
-              <thead>
-                <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                  <th className="pb-2 font-medium">Date</th>
-                  <th className="pb-2 font-medium">Description</th>
-                  <th className="pb-2 font-medium">Category</th>
-                  <th className="pb-2 font-medium">Amount</th>
-                  <th className="pb-2 font-medium">Receipt</th>
-                  <th className="pb-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myExpenses.map(e => (
-                  <tr key={e.id} className="border-b border-border hover:bg-muted/20">
-                    <td className="py-2.5">{e.date}</td>
-                    <td className="py-2.5 max-w-[180px] truncate">{e.description}</td>
-                    <td className="py-2.5">{e.category}</td>
-                    <td className="py-2.5 font-medium">₹{e.amount.toLocaleString('en-IN')}</td>
-                    <td className="py-2.5">
-                      {e.receiptDataUrl ? (
-                        <button onClick={() => window.open(e.receiptDataUrl, '_blank')}
-                          className="flex items-center gap-1.5 hover:opacity-80 transition-opacity" title="View receipt">
-                          <img src={e.receiptDataUrl} alt="Receipt" className="w-8 h-8 rounded-lg object-cover border border-border" />
-                          <Eye size={12} className="text-muted-foreground" />
-                        </button>
-                      ) : e.receipt ? (
-                        <span className="text-xs text-muted-foreground max-w-[110px] truncate inline-block">{e.receiptFileName || 'Attached'}</span>
-                      ) : <span className="text-muted-foreground">—</span>}
-                    </td>
-                    <td className="py-2.5"><StatusBadge status={e.status} /></td>
+              <table className="w-full text-sm min-w-[520px]">
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                    <th className="pb-2 font-medium">Date</th>
+                    <th className="pb-2 font-medium">Description</th>
+                    <th className="pb-2 font-medium">Category</th>
+                    <th className="pb-2 font-medium">Amount</th>
+                    <th className="pb-2 font-medium">Receipt</th>
+                    <th className="pb-2 font-medium">Status</th>
                   </tr>
-                ))}
-                {myExpenses.length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">No expense claims yet.</td></tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {myExpenses.map(e => (
+                    <tr key={e.id} className="border-b border-border hover:bg-muted/20">
+                      <td className="py-2.5">{e.date}</td>
+                      <td className="py-2.5 max-w-[180px] truncate">{e.description}</td>
+                      <td className="py-2.5">{e.category}</td>
+                      <td className="py-2.5 font-medium">₹{e.amount.toLocaleString('en-IN')}</td>
+                      <td className="py-2.5">
+                        {e.receipt ? (
+                          <button onClick={() => viewReceipt(e.id)}
+                            className="flex items-center gap-1.5 hover:opacity-80 transition-opacity text-xs text-muted-foreground max-w-[130px] truncate" title="View receipt">
+                            <Eye size={12} />
+                            <span className="truncate">{e.receiptFileName || 'Attached'}</span>
+                          </button>
+                        ) : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="py-2.5"><StatusBadge status={e.status} /></td>
+                    </tr>
+                  ))}
+                  {myExpenses.length === 0 && (
+                    <tr><td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">No expense claims yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

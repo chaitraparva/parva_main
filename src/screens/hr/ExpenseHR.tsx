@@ -3,7 +3,8 @@ import type { ChangeEvent } from 'react'
 import type { ExpenseClaim, Employee } from '../../types'
 import { Check, X, Filter, DollarSign, Upload, RefreshCw, ChevronDown, FileSpreadsheet, Archive, Download, Eye } from 'lucide-react'
 import { downloadExcel, buildExcelBlob } from '../../lib/excel'
-import { readFileAsDataUrl, downloadDataUrl, downloadZip, placeholderReceiptDataUrl } from '../../lib/files'
+import { downloadDataUrl, downloadZip, placeholderReceiptDataUrl } from '../../lib/files'
+import * as api from '../../lib/api'
 
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
@@ -25,14 +26,14 @@ function formatEmpId(id: string) {
   return n ? `EMP-${n.padStart(3, '0')}` : id.toUpperCase()
 }
 
-// Every claim that has a receipt gets a real, viewable image — the
-// employee's actual uploaded photo when there is one, or (for older seeded
-// demo claims that never had a real file attached) a clearly-labelled
-// placeholder so "view / download receipt" always has something honest to
-// show instead of silently doing nothing.
-function resolveReceiptUrl(c: ExpenseClaim): string | undefined {
-  if (!c.receipt) return undefined
-  if (c.receiptDataUrl) return c.receiptDataUrl
+// A claim's real receipt photo now lives in Supabase Storage, keyed by the
+// claim's database id — so viewing/downloading one means asking the backend
+// for a short-lived signed link, not reading a local data URL. This falls
+// back to a clearly-labelled placeholder image only for older claims that
+// have a receipt filename on record but no real photo was ever uploaded
+// (from before real storage existed for this), so "view / download" always
+// has something honest to show instead of silently failing.
+function placeholderFor(c: ExpenseClaim): string {
   return placeholderReceiptDataUrl({ category: c.category, amount: c.amount, date: c.date, employeeName: c.employeeName })
 }
 
@@ -52,11 +53,12 @@ interface Group {
 interface Props {
   expenses: ExpenseClaim[]
   onExpensesUpdate: (list: ExpenseClaim[]) => void
+  onExpensesRefetch: () => Promise<void>
   employees: Employee[]
   currentEmployee?: Employee
 }
 
-export default function ExpenseHR({ expenses, onExpensesUpdate, employees, currentEmployee }: Props) {
+export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetch, employees, currentEmployee }: Props) {
   const approverName = currentEmployee?.name || 'HR'
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterCategory, setFilterCategory] = useState<string>('all')
@@ -64,8 +66,9 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, employees, curre
   const [showNoteFor, setShowNoteFor] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null)
+  const [uploadingId, setUploadingId] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const [preview, setPreview] = useState<{ url: string; label: string; filename: string } | null>(null)
+  const [preview, setPreview] = useState<{ claim: ExpenseClaim; url: string; isPlaceholder: boolean } | null>(null)
   const [zippingId, setZippingId] = useState<string | null>(null)
 
   const toggleCollapsed = (employeeId: string) => {
@@ -88,8 +91,38 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, employees, curre
     e.target.value = ''
     setUploadTargetId(null)
     if (file && targetId) {
-      const dataUrl = await readFileAsDataUrl(file)
-      update(targetId, { receipt: true, receiptFileName: file.name, receiptDataUrl: dataUrl })
+      setUploadingId(targetId)
+      try {
+        await api.uploadExpenseReceipt(targetId, file)
+        await onExpensesRefetch()
+      } catch (err) {
+        console.error('Failed to upload the receipt photo', err)
+      } finally {
+        setUploadingId(null)
+      }
+    }
+  }
+
+  // Fetches a short-lived signed link for one claim's real receipt photo —
+  // falls back to the honest placeholder for a claim that has a filename on
+  // record but no real photo was ever uploaded.
+  async function viewReceipt(c: ExpenseClaim) {
+    if (!c.receipt) return
+    try {
+      const url = await api.fetchExpenseReceiptDownloadUrl(c.id)
+      setPreview({ claim: c, url, isPlaceholder: false })
+    } catch {
+      setPreview({ claim: c, url: placeholderFor(c), isPlaceholder: true })
+    }
+  }
+
+  async function downloadReceipt(c: ExpenseClaim) {
+    if (!c.receipt) return
+    try {
+      const url = await api.fetchExpenseReceiptDownloadUrl(c.id, receiptFileNameFor(c))
+      window.open(url, '_blank')
+    } catch {
+      downloadDataUrl(receiptFileNameFor(c), placeholderFor(c))
     }
   }
 
@@ -172,10 +205,20 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, employees, curre
       const files: { name: string; blob?: Blob; dataUrl?: string }[] = [
         { name: `${group.employeeName.replace(/\s+/g, '_')}-expense-sheet.xlsx`, blob: excelBlob },
       ]
-      group.claims.forEach((c, i) => {
-        const url = resolveReceiptUrl(c)
-        if (url) files.push({ name: `receipts/${i + 1}-${receiptFileNameFor(c)}`, dataUrl: url })
-      })
+      for (const [i, c] of group.claims.entries()) {
+        if (!c.receipt) continue
+        const name = `receipts/${i + 1}-${receiptFileNameFor(c)}`
+        try {
+          const signedUrl = await api.fetchExpenseReceiptDownloadUrl(c.id)
+          const res = await fetch(signedUrl)
+          if (!res.ok) throw new Error('Receipt fetch failed')
+          files.push({ name, blob: await res.blob() })
+        } catch {
+          // No real photo on file for this one — bundle the honest
+          // placeholder instead of silently dropping it from the zip.
+          files.push({ name, dataUrl: placeholderFor(c) })
+        }
+      }
       await downloadZip(`${group.employeeName.replace(/\s+/g, '_')}-expenses.zip`, files)
     } finally {
       setZippingId(null)
@@ -334,7 +377,6 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, employees, curre
                       <tbody>
                         {group.claims.map((c, i) => {
                           const sc = statusColor[c.status]
-                          const receiptUrl = resolveReceiptUrl(c)
                           return (
                             <tr key={c.id} className={`border-b border-border last:border-0 hover:bg-muted/40 transition-colors ${i % 2 === 0 ? '' : 'bg-muted/10'}`}>
                               <td className="px-5 py-4 text-xs text-muted-foreground whitespace-nowrap">{c.date}</td>
@@ -349,29 +391,30 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, employees, curre
                                 <p className="text-sm font-semibold text-foreground whitespace-nowrap">₹{c.amount.toLocaleString('en-IN')}</p>
                               </td>
                               <td className="px-5 py-4">
-                                {receiptUrl ? (
+                                {c.receipt ? (
                                   <div className="flex items-center gap-1.5">
-                                    <button onClick={() => setPreview({ url: receiptUrl, label: `${c.employeeName} — ${c.category} — ${c.date}`, filename: receiptFileNameFor(c) })}
-                                      className="w-9 h-9 rounded-lg overflow-hidden border border-border shrink-0 hover:ring-2 hover:ring-accent/40 transition-all" title="View receipt">
-                                      <img src={receiptUrl} alt="Receipt" className="w-full h-full object-cover" />
+                                    <button onClick={() => viewReceipt(c)}
+                                      className="w-9 h-9 rounded-lg overflow-hidden border border-border shrink-0 hover:ring-2 hover:ring-accent/40 transition-all flex items-center justify-center bg-muted/40" title="View receipt">
+                                      <Eye size={14} className="text-muted-foreground" />
                                     </button>
                                     <div className="flex flex-col gap-1">
-                                      <button onClick={() => downloadDataUrl(receiptFileNameFor(c), receiptUrl)}
+                                      <span className="text-[10px] text-muted-foreground max-w-[100px] truncate">{c.receiptFileName || 'Attached'}</span>
+                                      <button onClick={() => downloadReceipt(c)}
                                         className="flex items-center gap-1 text-[10px] font-medium hover:underline" style={{ color: navy }}>
                                         <Download size={10} /> Download
                                       </button>
-                                      <button onClick={() => triggerReceiptUpload(c.id)}
-                                        className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground">
-                                        <RefreshCw size={10} /> Replace
+                                      <button onClick={() => triggerReceiptUpload(c.id)} disabled={uploadingId === c.id}
+                                        className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-60">
+                                        <RefreshCw size={10} /> {uploadingId === c.id ? 'Uploading…' : 'Replace'}
                                       </button>
                                     </div>
                                   </div>
                                 ) : (
-                                  <button onClick={() => triggerReceiptUpload(c.id)}
-                                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-dashed transition-colors hover:bg-muted"
+                                  <button onClick={() => triggerReceiptUpload(c.id)} disabled={uploadingId === c.id}
+                                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-dashed transition-colors hover:bg-muted disabled:opacity-60"
                                     style={{ borderColor: '#E5DFD5', color: '#7A7065' }}>
                                     <Upload size={12} />
-                                    Upload
+                                    {uploadingId === c.id ? 'Uploading…' : 'Upload'}
                                   </button>
                                 )}
                               </td>
@@ -434,7 +477,10 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, employees, curre
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-foreground truncate flex items-center gap-1.5"><Eye size={14} /> Receipt Preview</p>
-                <p className="text-xs text-muted-foreground truncate">{preview.label}</p>
+                <p className="text-xs text-muted-foreground truncate">{preview.claim.employeeName} — {preview.claim.category} — {preview.claim.date}</p>
+                {preview.isPlaceholder && (
+                  <p className="text-[10px] text-amber-600 mt-0.5">No original photo on file for this claim — showing a placeholder.</p>
+                )}
               </div>
               <button onClick={() => setPreview(null)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0" aria-label="Close preview">
                 <X size={16} />
@@ -444,7 +490,7 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, employees, curre
               <img src={preview.url} alt="Receipt preview" className="max-w-full max-h-[60vh] rounded-lg shadow-sm" />
             </div>
             <div className="p-3 border-t border-border">
-              <button onClick={() => downloadDataUrl(preview.filename, preview.url)}
+              <button onClick={() => downloadReceipt(preview.claim)}
                 className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium text-white transition-all" style={{ backgroundColor: navy }}>
                 <Download size={14} /> Download Receipt
               </button>

@@ -9,6 +9,7 @@ import publicRouter from './routes/public.js'
 import adminRouter from './routes/admin.js'
 import employeesRouter from './routes/employees.js'
 import documentsRouter from './routes/documents.js'
+import expenseReceiptsRouter from './routes/expense-receipts.js'
 import {
   leaveRequestsRouter,
   payrollRecordsRouter,
@@ -36,7 +37,10 @@ const app = express()
 app.set('trust proxy', 1)
 
 app.use(helmet())
-app.use(express.json({ limit: '1mb' }))
+// Expense receipt photos travel in as base64 JSON, which inflates their
+// size by ~33% — 1mb was fine for plain records but is too small for a
+// phone photo, so the whole API's JSON limit is raised to accommodate it.
+app.use(express.json({ limit: '8mb' }))
 
 // Only the deployed frontend's exact origin may call this API — set
 // FRONTEND_ORIGIN to your Vercel URL (or custom domain) in production.
@@ -53,6 +57,7 @@ app.use('/api/public', publicRouter)
 app.use('/api/admin', adminRouter)
 app.use('/api/employees', employeesRouter)
 app.use('/api/documents', documentsRouter)
+app.use('/api/expense-receipts', expenseReceiptsRouter)
 app.use('/api/leave-requests', leaveRequestsRouter)
 app.use('/api/payroll-records', payrollRecordsRouter)
 app.use('/api/attendance-records', attendanceRouter)

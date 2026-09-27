@@ -238,6 +238,20 @@ export default function App() {
         }
       })()
   }
+  // Used only by MyPortal's expense-sheet submission, which creates claims
+  // (and uploads their receipt photos) directly against the API rather than
+  // going through the onExpensesUpdate diff above — that diff can't upload a
+  // receipt itself, since a receipt needs the real database id the server
+  // assigns on create, not the temporary client-side id a new claim starts
+  // with. MyPortal calls this afterward to pull the freshly created rows
+  // (with their receiptFilename now set) into state.
+  const refetchExpenses = async () => {
+    try {
+      setRawExpenses(await api.fetchExpenseClaims())
+    } catch (err) {
+      console.error('Failed to refresh expense claims from the server', err)
+    }
+  }
   // Same idea as onLeaveUpdate above, but generic over every persistable
   // field instead of hardcoding which ones count as "changed" — payroll
   // records get touched by more distinct actions (generate, manager
@@ -532,6 +546,7 @@ export default function App() {
         return (
           <MyPortal
             {...sharedLeaveProps} {...sharedExpenseProps}
+            onExpensesRefetch={refetchExpenses}
             employeeId={employeeId}
             employees={employees}
             attendance={attendance}
@@ -595,7 +610,7 @@ export default function App() {
       case 'payroll-hr':
         return <PayrollHR role={role} payroll={payroll} onPayrollUpdate={onPayrollUpdate} employees={employees} attendance={attendance} leaves={leaves} />
       case 'expense-hr':
-        return <ExpenseHR {...sharedExpenseProps} employees={employees} currentEmployee={currentEmployee} />
+        return <ExpenseHR {...sharedExpenseProps} onExpensesRefetch={refetchExpenses} employees={employees} currentEmployee={currentEmployee} />
       case 'onboarding-hr':
         return <OnboardingHR onboarding={onboarding} onOnboardingUpdate={onOnboardingUpdate} />
       case 'exit-management':
