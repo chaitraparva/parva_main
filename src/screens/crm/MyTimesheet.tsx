@@ -44,6 +44,7 @@ export default function MyTimesheet({ employeeId, employees, timesheet, onSaveEn
   const [form, setForm] = useState(emptyForm(todayIso()))
   const [savedFlash, setSavedFlash] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const loadDay = (date: string) => {
     const existing = entries.find(e => e.date === date)
@@ -71,6 +72,7 @@ export default function MyTimesheet({ employeeId, employees, timesheet, onSaveEn
   const handleSave = async () => {
     if (!form.date) return
     setSaving(true)
+    setSaveError(null)
     try {
       await onSaveEntry({
         employeeId,
@@ -90,6 +92,10 @@ export default function MyTimesheet({ employeeId, employees, timesheet, onSaveEn
       })
       setSavedFlash(true)
       setTimeout(() => setSavedFlash(false), 2500)
+    } catch (err) {
+      // Surfaced instead of silently swallowed — a failed save used to look
+      // identical to a successful one (see App.tsx's onSaveTimesheetEntry).
+      setSaveError(err instanceof Error ? err.message : 'Could not save this entry. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -192,6 +198,7 @@ export default function MyTimesheet({ employeeId, employees, timesheet, onSaveEn
             style={{ backgroundColor: gold, color: navy }}>
             <Save size={14} /> {saving ? 'Saving…' : 'Save Entry'}
           </button>
+          {saveError && <p className="text-xs font-medium" style={{ color: '#DC2626' }}>{saveError}</p>}
           {savedFlash && (
             <span className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#059669' }}>
               <CheckCircle2 size={15} /> Saved

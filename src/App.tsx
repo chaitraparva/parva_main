@@ -408,6 +408,12 @@ export default function App() {
   // A real UNIQUE(employee_id, date) constraint backs this now (see the
   // migration), so this looks for an existing row for that employee+date in
   // what's already loaded and PATCHes it; otherwise it POSTs a new one.
+  // Unlike every other module's update handler, this one deliberately does
+  // NOT swallow its own error — it lets it propagate to MyTimesheet.tsx so a
+  // failed save can show the person a real error instead of silently
+  // flashing "Saved" while nothing was actually written (exactly what
+  // happened before this fix: the table didn't exist in Supabase yet, the
+  // insert failed, and the UI had no way to know).
   const onSaveTimesheetEntry = async (entry: Omit<TimesheetEntry, 'id' | 'loggedAt'>) => {
     const existing = timesheet.find(t => t.employeeId === entry.employeeId && t.date === entry.date)
     const loggedAt = new Date().toISOString()
@@ -417,8 +423,6 @@ export default function App() {
       } else {
         await api.createTimesheetEntry({ ...entry, loggedAt })
       }
-    } catch (err) {
-      console.error('Failed to save a timesheet entry to the server', err)
     } finally {
       try {
         setRawTimesheet(await api.fetchTimesheetEntries())
