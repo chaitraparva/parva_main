@@ -27,11 +27,11 @@ const NEXT_STATUS: Partial<Record<TicketStatus, TicketStatus>> = {
 interface TicketsHRProps {
   tickets: EmployeeTicket[]
   onTicketsUpdate: (next: EmployeeTicket[]) => void
+  onAddTicketComment: (ticketId: string, text: string) => Promise<void>
   currentEmployee?: Employee
 }
 
-export default function TicketsHR({ tickets: ticketsProp, onTicketsUpdate, currentEmployee }: TicketsHRProps) {
-  const hrName = currentEmployee?.name || 'HR'
+export default function TicketsHR({ tickets: ticketsProp, onTicketsUpdate, onAddTicketComment, currentEmployee }: TicketsHRProps) {
   const [tickets, setTicketsLocal] = useState<EmployeeTicket[]>(ticketsProp)
   useEffect(() => { setTicketsLocal(ticketsProp) }, [ticketsProp])
   const setTickets = (updater: EmployeeTicket[] | ((prev: EmployeeTicket[]) => EmployeeTicket[])) => {
@@ -42,10 +42,21 @@ export default function TicketsHR({ tickets: ticketsProp, onTicketsUpdate, curre
     })
   }
   const [selected, setSelected] = useState<EmployeeTicket | null>(null)
+  // Keeps the open ticket's comment thread current once a new reply comes
+  // back from the server (comments arrive via a refetch a moment after
+  // posting, not synchronously) — without this, `selected` would stay a
+  // stale snapshot from whenever it was first clicked.
+  useEffect(() => {
+    if (!selected) return
+    const fresh = tickets.find(t => t.id === selected.id)
+    if (fresh) setSelected(fresh)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickets])
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterPriority, setFilterPriority] = useState<string>('all')
   const [search, setSearch] = useState('')
   const [reply, setReply] = useState('')
+  const [sendingComment, setSendingComment] = useState(false)
 
   const filtered = tickets.filter(t => {
     const matchStatus = filterStatus === 'all' || t.status === filterStatus
@@ -60,14 +71,21 @@ export default function TicketsHR({ tickets: ticketsProp, onTicketsUpdate, curre
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status } : null)
   }
 
-  const sendComment = () => {
+  // Comments live in their own backend table now (not a field on the
+  // ticket), so this posts directly rather than mutating the ticket object
+  // and going through onTicketsUpdate/setTickets.
+  const sendComment = async () => {
     if (!reply.trim() || !selected) return
-    const comment = { by: hrName, role: 'hr' as const, text: reply.trim(), at: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) }
-    const updated = tickets.map(t => t.id === selected.id ? { ...t, comments: [...t.comments, comment] } : t)
-    setTickets(updated)
-    const found = updated.find(t => t.id === selected.id)
-    if (found) setSelected(found)
+    const text = reply.trim()
     setReply('')
+    setSendingComment(true)
+    try {
+      await onAddTicketComment(selected.id, text)
+    } catch (err) {
+      console.error('Failed to post the comment', err)
+    } finally {
+      setSendingComment(false)
+    }
   }
 
   const counts = {
@@ -259,7 +277,7 @@ export default function TicketsHR({ tickets: ticketsProp, onTicketsUpdate, curre
                     onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendComment()}
                     placeholder="Type your reply… (Enter to send)"
                     className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-border bg-muted focus:outline-none focus:ring-1 focus:ring-accent/40" />
-                  <button onClick={sendComment} disabled={!reply.trim()}
+                  <button onClick={sendComment} disabled={!reply.trim() || sendingComment}
                     className="w-10 h-10 rounded-lg flex items-center justify-center transition-all disabled:opacity-40"
                     style={{ backgroundColor: navy }}>
                     <Send size={15} color="#FAF8F5" />

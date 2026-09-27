@@ -8,7 +8,7 @@
 // the user back to the sign-in screen — see restoreSession() below, called
 // once from App.tsx on mount.
 
-import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim } from '../types'
+import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket } from '../types'
 
 const TOKEN_KEY = 'parva_auth_token'
 
@@ -342,4 +342,60 @@ export async function fetchExpenseReceiptDownloadUrl(claimId: string, downloadFi
     method: 'GET',
   })
   return data.downloadUrl
+}
+
+// ─────────────────────── Employee tickets ───────────────────────
+// Same pattern again — tickets stores employee_id, not the employee's
+// name/department. Comments are NOT a column here at all — they live in
+// their own table (ticket_comments), fetched/created through the separate
+// functions below, not through this type. raisedOn/updatedAt are server-set
+// (DB defaults) on create; updatedAt is refreshed explicitly on every PATCH
+// (see App.tsx's onTicketsUpdate) since there's no database trigger for it.
+export type RawEmployeeTicket = Omit<EmployeeTicket, 'employeeName' | 'department' | 'comments'>
+
+export async function fetchTickets(): Promise<RawEmployeeTicket[]> {
+  const data = await request<{ tickets: RawEmployeeTicket[] }>('/api/tickets', { method: 'GET' })
+  return data.tickets
+}
+
+export async function createTicket(input: Omit<RawEmployeeTicket, 'id' | 'raisedOn' | 'updatedAt'>): Promise<RawEmployeeTicket> {
+  const data = await request<{ ticket: RawEmployeeTicket }>('/api/tickets', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.ticket
+}
+
+export async function updateTicket(id: string, patch: Partial<Omit<RawEmployeeTicket, 'id' | 'raisedOn'>>): Promise<RawEmployeeTicket> {
+  const data = await request<{ ticket: RawEmployeeTicket }>(`/api/tickets/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.ticket
+}
+
+// A ticket's replies — one row per comment, fetched all at once (every
+// comment the signed-in user is allowed to see) rather than per-ticket, so
+// they can be grouped client-side by ticketId the same way every other
+// resource here is fetched once per session and derived from.
+export interface RawTicketComment {
+  id: string
+  ticketId: string
+  byName: string
+  byRole: 'hr' | 'employee'
+  body: string
+  createdAt: string
+}
+
+export async function fetchTicketComments(): Promise<RawTicketComment[]> {
+  const data = await request<{ ticket_comments: RawTicketComment[] }>('/api/ticket-comments', { method: 'GET' })
+  return data.ticket_comments
+}
+
+export async function createTicketComment(ticketId: string, body: string): Promise<RawTicketComment> {
+  const data = await request<{ ticket_comment: RawTicketComment }>('/api/ticket-comments', {
+    method: 'POST',
+    body: JSON.stringify({ ticketId, body }),
+  })
+  return data.ticket_comment
 }

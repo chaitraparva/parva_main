@@ -55,8 +55,14 @@ export const ticketsRouter = crudRouter({
   table: 'tickets',
   allowedColumns: [
     'employeeId', 'title', 'type', 'priority', 'status', 'description',
-    'assignedTo', 'resolution',
+    'assignedTo', 'resolution', 'updatedAt',
   ],
+  // Any employee can raise their own ticket (POST); only HR/management can
+  // change its status, assign it, or resolve it (PATCH) — same
+  // create-open/update-restricted split used for leave requests and expense
+  // claims above, so an employee can't close or reassign their own (or
+  // someone else's) ticket by calling the API directly.
+  updateRoles: ['hr', 'management'],
 })
 
 export const exitRecordsRouter = crudRouter({

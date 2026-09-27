@@ -10,6 +10,7 @@ import adminRouter from './routes/admin.js'
 import employeesRouter from './routes/employees.js'
 import documentsRouter from './routes/documents.js'
 import expenseReceiptsRouter from './routes/expense-receipts.js'
+import ticketCommentsRouter from './routes/ticket-comments.js'
 import {
   leaveRequestsRouter,
   payrollRecordsRouter,
@@ -63,6 +64,7 @@ app.use('/api/payroll-records', payrollRecordsRouter)
 app.use('/api/attendance-records', attendanceRouter)
 app.use('/api/expense-claims', expenseClaimsRouter)
 app.use('/api/tickets', ticketsRouter)
+app.use('/api/ticket-comments', ticketCommentsRouter)
 app.use('/api/exit-records', exitRecordsRouter)
 app.use('/api/job-requisitions', jobRequisitionsRouter)
 app.use('/api/candidates', candidatesRouter)

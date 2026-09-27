@@ -54,6 +54,7 @@ interface Props {
   attendance: AttendanceRecord[]
   tickets: EmployeeTicket[]
   onTicketsUpdate: (next: EmployeeTicket[]) => void
+  onAddTicketComment: (ticketId: string, text: string) => Promise<void>
 }
 
 interface DraftRow {
@@ -70,7 +71,7 @@ function blankRow(): DraftRow {
   return { id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, date: '', category: 'Travel', description: '', amount: '', file: null, previewUrl: null }
 }
 
-export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate: _onExpensesUpdate, onExpensesRefetch, employeeId, employees, attendance: attendanceRecords, tickets, onTicketsUpdate }: Props) {
+export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate: _onExpensesUpdate, onExpensesRefetch, employeeId, employees, attendance: attendanceRecords, tickets, onTicketsUpdate, onAddTicketComment }: Props) {
   const [tab, setTab] = useState<Tab>('leave')
   const [leaveFlash, setLeaveFlash] = useState(false)
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '' })
@@ -268,15 +269,18 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
     setShowTicketForm(false)
   }
 
-  function addComment(ticketId: string) {
+  // Comments live in their own backend table now (not a field on the
+  // ticket), so this posts directly rather than mutating the ticket object
+  // and going through onTicketsUpdate.
+  async function addComment(ticketId: string) {
     const text = commentInputs[ticketId]?.trim()
     if (!text) return
-    onTicketsUpdate(tickets.map(t =>
-      t.id === ticketId
-        ? { ...t, comments: [...t.comments, { by: meName, role: 'employee' as const, text, at: new Date().toLocaleString() }] }
-        : t
-    ))
     setCommentInputs(prev => ({ ...prev, [ticketId]: '' }))
+    try {
+      await onAddTicketComment(ticketId, text)
+    } catch (err) {
+      console.error('Failed to post the comment', err)
+    }
   }
 
   const tabs: { key: Tab; label: string }[] = [

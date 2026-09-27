@@ -62,6 +62,14 @@ function toDateOnly(value: string | null | undefined): string {
   return value ? String(value).slice(0, 10) : ''
 }
 
+// A ticket comment's timestamp (a real TIMESTAMPTZ from the database) shown
+// the same friendly way both HR's and the employee's own "raise a ticket"
+// screens used to format it locally before comments were a real table.
+function formatCommentAt(value: string | null | undefined): string {
+  if (!value) return ''
+  return new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
 // The subset of a PayrollRecord that's actually a database column (not
 // derived like employeeName/role, and not the id) — used to both send the
 // right shape to the API and to detect whether a record actually changed.
@@ -102,6 +110,18 @@ function expenseFieldsOf(e: ExpenseClaim): Omit<api.RawExpenseClaim, 'id' | 'cla
     reimbursedOn: e.reimbursedOn,
     note: e.note,
   }
+}
+
+// updatedAt is deliberately excluded from this list — see onTicketsUpdate
+// below, which always sets it fresh on every actual change rather than
+// trusting whatever the child screen happened to leave on the object (the
+// same reason leave requests' decidedAt is set centrally, not per-screen).
+const TICKET_FIELDS = ['employeeId', 'title', 'type', 'priority', 'status', 'description', 'assignedTo', 'resolution'] as const
+
+function ticketFieldsOf(t: EmployeeTicket): Omit<api.RawEmployeeTicket, 'id' | 'raisedOn' | 'updatedAt'> {
+  const out: Record<string, unknown> = {}
+  for (const f of TICKET_FIELDS) out[f] = (t as unknown as Record<string, unknown>)[f] ?? null
+  return out as Omit<api.RawEmployeeTicket, 'id' | 'raisedOn' | 'updatedAt'>
 }
 
 // Onboarding candidate as used across the (loosely-typed) Onboarding screens.
@@ -147,7 +167,14 @@ export default function App() {
   // Attendance records are real now too — see rawAttendance/attendance below.
   const [rawAttendance, setRawAttendance] = useState<api.RawAttendanceRecord[]>([])
   const [attendanceLoaded, setAttendanceLoaded] = useState(false)
-  const [tickets, setTickets] = useState<EmployeeTicket[]>(mockData.employeeTickets)
+  // Employee tickets are real now too — see rawTickets/tickets below.
+  // Comments are fetched separately (they live in their own table, not a
+  // column on tickets — see api.ts) and grouped in by ticketId when tickets
+  // is derived.
+  const [rawTickets, setRawTickets] = useState<api.RawEmployeeTicket[]>([])
+  const [ticketsLoaded, setTicketsLoaded] = useState(false)
+  const [rawTicketComments, setRawTicketComments] = useState<api.RawTicketComment[]>([])
+  const [ticketCommentsLoaded, setTicketCommentsLoaded] = useState(false)
   const [exits, setExits] = useState<ExitRecord[]>(mockData.exitRecords)
   const [requisitions, setRequisitions] = useState<JobRequisition[]>(mockData.jobRequisitions)
   const [candidates, setCandidates] = useState<Candidate[]>(mockData.candidates)
@@ -331,7 +358,57 @@ export default function App() {
         }
       })()
   }
-  const onTicketsUpdate = (next: EmployeeTicket[]) => { setTickets(next) }
+  // Same generic diff-and-sync approach as onPayrollUpdate/onAttendanceUpdate
+  // — comments are excluded from TICKET_FIELDS entirely (they're not a
+  // column here, see api.ts/ticketFieldsOf), so adding a reply never runs
+  // through this path; see addTicketComment below instead. updatedAt isn't
+  // part of the equality check (it always differs) but IS sent on every
+  // real update, mirroring how onLeaveUpdate always sets decidedAt itself.
+  const onTicketsUpdate = (next: EmployeeTicket[]) => {
+    const prevById = new Map(tickets.map(t => [t.id, t]))
+    const created = next.filter(t => !prevById.has(t.id))
+    const updated = next.filter(t => {
+      const prev = prevById.get(t.id)
+      return prev && JSON.stringify(ticketFieldsOf(prev)) !== JSON.stringify(ticketFieldsOf(t))
+    })
+
+    setRawTickets(next.map(t => ({ id: t.id, raisedOn: t.raisedOn, updatedAt: t.updatedAt, ...ticketFieldsOf(t) } as api.RawEmployeeTicket)))
+
+      ; (async () => {
+        try {
+          for (const t of created) {
+            await api.createTicket(ticketFieldsOf(t))
+          }
+          for (const t of updated) {
+            await api.updateTicket(t.id, { ...ticketFieldsOf(t), updatedAt: new Date().toISOString() })
+          }
+        } catch (err) {
+          console.error('Failed to save a ticket change to the server', err)
+        } finally {
+          try {
+            setRawTickets(await api.fetchTickets())
+          } catch {
+            // Offline/unreachable — stay on the optimistic state.
+          }
+        }
+      })()
+  }
+  // Adding a reply never goes through onTicketsUpdate above — comments live
+  // in their own table, not a column on the ticket — so this posts directly
+  // and refetches just the comments.
+  const addTicketComment = async (ticketId: string, text: string) => {
+    try {
+      await api.createTicketComment(ticketId, text)
+    } catch (err) {
+      console.error('Failed to save a ticket comment to the server', err)
+    } finally {
+      try {
+        setRawTicketComments(await api.fetchTicketComments())
+      } catch {
+        // Offline/unreachable — stay on whatever comments are already shown.
+      }
+    }
+  }
   const onExitsUpdate = (next: ExitRecord[]) => { setExits(next) }
   const onRequisitionsUpdate = (next: JobRequisition[]) => { setRequisitions(next) }
   const onOnboardingUpdate = (next: OnboardingCandidate[]) => { setOnboarding(next) }
@@ -370,6 +447,10 @@ export default function App() {
     setAttendanceLoaded(false)
     setRawExpenses([])
     setExpensesLoaded(false)
+    setRawTickets([])
+    setTicketsLoaded(false)
+    setRawTicketComments([])
+    setTicketCommentsLoaded(false)
     setScreen('hr-dashboard')
   }
 
@@ -477,6 +558,40 @@ export default function App() {
     return () => { cancelled = true }
   }, [role, expensesLoaded])
 
+  // Same pattern, for tickets.
+  useEffect(() => {
+    if (!role || ticketsLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchTickets()
+          if (!cancelled) setRawTickets(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setTicketsLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, ticketsLoaded])
+
+  // Same pattern, for ticket comments (a separate table — see api.ts).
+  useEffect(() => {
+    if (!role || ticketCommentsLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchTicketComments()
+          if (!cancelled) setRawTicketComments(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setTicketCommentsLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, ticketCommentsLoaded])
+
   if (checkingSession) return null
 
   if (!role) return <Login onLogin={handleLogin} />
@@ -548,9 +663,28 @@ export default function App() {
     }
   })
 
+  // Same idea — tickets doesn't store employee_id's name/department, and its
+  // comments come from a completely separate fetch (see rawTicketComments
+  // above), grouped in here by ticketId rather than living in this array.
+  const tickets: EmployeeTicket[] = rawTickets.map(r => {
+    const emp = employees.find(e => e.id === r.employeeId)
+    return {
+      ...r,
+      id: String(r.id),
+      employeeName: emp?.name || 'Unknown',
+      department: emp?.department || '',
+      raisedOn: toDateOnly(r.raisedOn),
+      updatedAt: toDateOnly(r.updatedAt),
+      comments: rawTicketComments
+        .filter(c => String(c.ticketId) === String(r.id))
+        .map(c => ({ by: c.byName, role: c.byRole, text: c.body, at: formatCommentAt(c.createdAt) })),
+    }
+  })
+
   const unreadCount = notifications.filter(n => !n.read).length
   const sharedLeaveProps = { leaves, onLeaveUpdate }
   const sharedExpenseProps = { expenses, onExpensesUpdate }
+  const sharedTicketProps = { tickets, onTicketsUpdate, onAddTicketComment: addTicketComment }
   // role is set — handleLogin always sets an employeeId alongside it.
   const employeeId = currentEmployeeId || ''
   const currentEmployee = employees.find(e => e.id === employeeId)
@@ -567,12 +701,11 @@ export default function App() {
       case 'my-portal':
         return (
           <MyPortal
-            {...sharedLeaveProps} {...sharedExpenseProps}
+            {...sharedLeaveProps} {...sharedExpenseProps} {...sharedTicketProps}
             onExpensesRefetch={refetchExpenses}
             employeeId={employeeId}
             employees={employees}
             attendance={attendance}
-            tickets={tickets} onTicketsUpdate={onTicketsUpdate}
           />
         )
       case 'manager-portal':
@@ -639,7 +772,7 @@ export default function App() {
       case 'exit-management':
         return <ExitManagement exits={exits} onExitsUpdate={onExitsUpdate} />
       case 'tickets-hr':
-        return <TicketsHR tickets={tickets} onTicketsUpdate={onTicketsUpdate} currentEmployee={currentEmployee} />
+        return <TicketsHR {...sharedTicketProps} currentEmployee={currentEmployee} />
       case 'notifications':
         return <Notifications notifications={notifications} onNotificationsUpdate={onNotificationsUpdate} />
       case 'settings':
