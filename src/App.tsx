@@ -213,8 +213,13 @@ export default function App() {
   const [requisitionsLoaded, setRequisitionsLoaded] = useState(false)
   const [rawCandidates, setRawCandidates] = useState<Candidate[]>([])
   const [candidatesLoaded, setCandidatesLoaded] = useState(false)
-  const [goals, setGoals] = useState<PerformanceGoal[]>(mockData.performanceGoals)
-  const [reviews, setReviews] = useState<PerformanceReview[]>(mockData.performanceReviews)
+  // Performance goals and reviews are real now too — see
+  // rawGoals/goals and rawReviews/reviews below. Performance.tsx has no
+  // create/edit UI for either, so like candidates these are fetch-only.
+  const [rawGoals, setRawGoals] = useState<api.RawPerformanceGoal[]>([])
+  const [goalsLoaded, setGoalsLoaded] = useState(false)
+  const [rawReviews, setRawReviews] = useState<api.RawPerformanceReview[]>([])
+  const [reviewsLoaded, setReviewsLoaded] = useState(false)
   const [onboarding, setOnboarding] = useState<OnboardingCandidate[]>(mockData.onboardingCandidates)
   const [notifications, setNotifications] = useState<Notification[]>(mockData.notifications)
 
@@ -556,6 +561,10 @@ export default function App() {
     setRequisitionsLoaded(false)
     setRawCandidates([])
     setCandidatesLoaded(false)
+    setRawGoals([])
+    setGoalsLoaded(false)
+    setRawReviews([])
+    setReviewsLoaded(false)
     setScreen('hr-dashboard')
   }
 
@@ -748,6 +757,40 @@ export default function App() {
     return () => { cancelled = true }
   }, [role, candidatesLoaded])
 
+  // Same pattern, for performance goals.
+  useEffect(() => {
+    if (!role || goalsLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchPerformanceGoals()
+          if (!cancelled) setRawGoals(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setGoalsLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, goalsLoaded])
+
+  // Same pattern, for performance reviews.
+  useEffect(() => {
+    if (!role || reviewsLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchPerformanceReviews()
+          if (!cancelled) setRawReviews(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setReviewsLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, reviewsLoaded])
+
   if (checkingSession) return null
 
   if (!role) return <Login onLogin={handleLogin} />
@@ -879,6 +922,30 @@ export default function App() {
     postedOn: r.postedOn ? toDateOnly(r.postedOn) : undefined,
     applicants: candidates.filter(c => c.requisitionId === r.id).length,
   }))
+
+  // Same idea — performance_goals doesn't store the employee's name.
+  const goals: PerformanceGoal[] = rawGoals.map(g => {
+    const emp = employees.find(e => e.id === g.employeeId)
+    return { ...g, id: String(g.id), employeeName: emp?.name || 'Unknown' }
+  })
+
+  // Same idea — performance_reviews doesn't store the employee's name/role/
+  // department. self_rating/manager_rating/final_rating are NUMERIC columns
+  // (already parsed to numbers by the global pg type parser — see db.js —
+  // but coerced again here defensively, the same as fnfAmount above).
+  const reviews: PerformanceReview[] = rawReviews.map(r => {
+    const emp = employees.find(e => e.id === r.employeeId)
+    return {
+      ...r,
+      id: String(r.id),
+      employeeName: emp?.name || 'Unknown',
+      role: emp?.role || 'agent',
+      department: emp?.department || '',
+      selfRating: r.selfRating != null ? Number(r.selfRating) : undefined,
+      managerRating: r.managerRating != null ? Number(r.managerRating) : undefined,
+      finalRating: r.finalRating != null ? Number(r.finalRating) : undefined,
+    }
+  })
 
   const unreadCount = notifications.filter(n => !n.read).length
   const sharedLeaveProps = { leaves, onLeaveUpdate }

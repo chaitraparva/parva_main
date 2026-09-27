@@ -8,7 +8,7 @@
 // the user back to the sign-in screen — see restoreSession() below, called
 // once from App.tsx on mount.
 
-import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord, JobRequisition, Candidate } from '../types'
+import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal, PerformanceReview } from '../types'
 
 const TOKEN_KEY = 'parva_auth_token'
 
@@ -464,4 +464,22 @@ export async function updateJobRequisition(id: string, patch: Partial<Omit<RawJo
 export async function fetchCandidates(): Promise<Candidate[]> {
   const data = await request<{ candidates: Candidate[] }>('/api/candidates', { method: 'GET' })
   return data.candidates
+}
+
+// ─────────────────────── Performance goals & reviews ───────────────────────
+// Performance.tsx (the only screen that reads these) has no create/edit UI
+// at all for either goals or reviews — it's a pure dashboard/table view —
+// so like candidates above, only fetch functions are needed here.
+export type RawPerformanceGoal = Omit<PerformanceGoal, 'employeeName'>
+
+export async function fetchPerformanceGoals(): Promise<RawPerformanceGoal[]> {
+  const data = await request<{ performance_goals: RawPerformanceGoal[] }>('/api/performance-goals', { method: 'GET' })
+  return data.performance_goals
+}
+
+export type RawPerformanceReview = Omit<PerformanceReview, 'employeeName' | 'role' | 'department'>
+
+export async function fetchPerformanceReviews(): Promise<RawPerformanceReview[]> {
+  const data = await request<{ performance_reviews: RawPerformanceReview[] }>('/api/performance-reviews', { method: 'GET' })
+  return data.performance_reviews
 }
