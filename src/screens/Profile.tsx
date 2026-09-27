@@ -231,6 +231,7 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
         employeeName={me.name}
         viewerId={me.id}
         viewerName={me.name}
+        employees={employees}
         title="My Documents"
         description="Upload your ID proofs, certificates and other documents here — only HR and you can see these."
       />

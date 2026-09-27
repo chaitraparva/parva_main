@@ -27,6 +27,7 @@ import {
   flagsRouter,
   notificationsRouter,
   leadsRouter,
+  onboardingCandidatesRouter,
 } from './routes/resources.js'
 
 const app = express()
@@ -77,6 +78,7 @@ app.use('/api/flags', flagsRouter)
 app.use('/api/notifications', notificationsRouter)
 app.use('/api/leads', leadsRouter)
 app.use('/api/lead-activities', leadActivitiesRouter)
+app.use('/api/onboarding-candidates', onboardingCandidatesRouter)
 
 // Centralized error handler — keeps stack traces out of API responses.
 app.use((err, _req, res, _next) => {

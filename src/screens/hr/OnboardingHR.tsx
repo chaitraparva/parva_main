@@ -34,6 +34,8 @@ interface Candidate {
   onboardingProgress: number
   email?: string
   phone?: string
+  checklistDone: string[]
+  docItems: Record<string, boolean>
 }
 
 const REQUIRED_DOCS = [
@@ -47,12 +49,19 @@ const BLANK_FORM = {
 }
 
 interface OnboardingHRProps {
-  onboarding: Array<{ id: string; name: string; role: string; team: string; joiningDate: string; docStatus: string; onboardingProgress: number; email?: string; phone?: string }>
+  onboarding: Array<{
+    id: string; name: string; role: string; team: string; joiningDate: string
+    docStatus: string; onboardingProgress: number; email?: string; phone?: string
+    checklistDone: string[]; docItems: Record<string, boolean>
+  }>
   onOnboardingUpdate: (next: OnboardingHRProps['onboarding']) => void
 }
 
 function toLocalCandidates(source: OnboardingHRProps['onboarding']): Candidate[] {
-  return source.map(c => ({ ...c, role: c.role as JobTitle, email: c.email || '', phone: c.phone || '', docStatus: c.docStatus as DocStatus }))
+  return source.map(c => ({
+    ...c, role: c.role as JobTitle, email: c.email || '', phone: c.phone || '', docStatus: c.docStatus as DocStatus,
+    checklistDone: c.checklistDone || [], docItems: c.docItems || {},
+  }))
 }
 
 export default function OnboardingHR({ onboarding, onOnboardingUpdate }: OnboardingHRProps) {
@@ -70,39 +79,27 @@ export default function OnboardingHR({ onboarding, onOnboardingUpdate }: Onboard
   }
 
   const [selected, setSelected] = useState<string>(candidates[0]?.id || '')
-  const [checklist, setChecklist] = useState<Record<string, string[]>>({
-    'ob-1': CHECKLIST.slice(0, 6).map(c => c.label),
-    'ob-2': CHECKLIST.slice(0, 3).map(c => c.label),
-    'ob-3': CHECKLIST.slice(0, 1).map(c => c.label),
-  })
-  const [docStatus, setDocStatus] = useState<Record<string, Record<string, boolean>>>({
-    'ob-1': Object.fromEntries(REQUIRED_DOCS.map(d => [d, true])),
-    'ob-2': Object.fromEntries(REQUIRED_DOCS.map((d, i) => [d, i < 4])),
-    'ob-3': Object.fromEntries(REQUIRED_DOCS.map((d, i) => [d, i < 1])),
-  })
   const [showAddForm, setShowAddForm] = useState(false)
   const [form, setForm] = useState(BLANK_FORM)
 
   const candidate = candidates.find(c => c.id === selected)
-  const candidateChecklist = checklist[selected] || []
-  const candidateDocs = docStatus[selected] || {}
+  const candidateChecklist = candidate?.checklistDone || []
+  const candidateDocs = candidate?.docItems || {}
 
   const toggleChecklist = (item: string) => {
-    const current = checklist[selected] || []
+    const current = candidate?.checklistDone || []
     const updated = current.includes(item) ? current.filter(i => i !== item) : [...current, item]
-    setChecklist(p => ({ ...p, [selected]: updated }))
     const progress = Math.round((updated.length / CHECKLIST.length) * 100)
-    setCandidates(prev => prev.map(c => c.id === selected ? { ...c, onboardingProgress: progress } : c))
+    setCandidates(prev => prev.map(c => c.id === selected ? { ...c, checklistDone: updated, onboardingProgress: progress } : c))
   }
 
   const toggleDoc = (doc: string) => {
-    const current = docStatus[selected] || {}
+    const current = candidate?.docItems || {}
     const updated = { ...current, [doc]: !current[doc] }
-    setDocStatus(p => ({ ...p, [selected]: updated }))
-    const allDone = Object.values(updated).every(Boolean)
-    const anyDone = Object.values(updated).some(Boolean)
+    const allDone = REQUIRED_DOCS.every(d => updated[d])
+    const anyDone = REQUIRED_DOCS.some(d => updated[d])
     const status: DocStatus = allDone ? 'complete' : anyDone ? 'pending' : 'missing'
-    setCandidates(prev => prev.map(c => c.id === selected ? { ...c, docStatus: status } : c))
+    setCandidates(prev => prev.map(c => c.id === selected ? { ...c, docItems: updated, docStatus: status } : c))
   }
 
   const addCandidate = () => {
@@ -112,10 +109,9 @@ export default function OnboardingHR({ onboarding, onOnboardingUpdate }: Onboard
       id, name: form.name, role: form.role, team: form.team || 'Sales',
       joiningDate: form.joiningDate, docStatus: 'missing',
       onboardingProgress: 0, email: form.email, phone: form.phone,
+      checklistDone: [], docItems: Object.fromEntries(REQUIRED_DOCS.map(d => [d, false])),
     }
     setCandidates(prev => [...prev, newCand])
-    setChecklist(p => ({ ...p, [id]: [] }))
-    setDocStatus(p => ({ ...p, [id]: Object.fromEntries(REQUIRED_DOCS.map(d => [d, false])) }))
     setSelected(id)
     setShowAddForm(false)
     setForm(BLANK_FORM)

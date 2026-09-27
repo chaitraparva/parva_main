@@ -781,6 +781,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
           employeeName={meName}
           viewerId={employeeId}
           viewerName={meName}
+          employees={employees}
           title="My Documents"
           description="Upload your Aadhar, PAN, offer letter and other documents here, and download them whenever you need them."
         />

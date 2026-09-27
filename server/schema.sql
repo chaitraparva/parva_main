@@ -358,11 +358,41 @@ CREATE INDEX idx_notifications_employee_id ON notifications(employee_id);
 CREATE TABLE employee_documents (
   id           BIGSERIAL PRIMARY KEY,
   employee_id  TEXT NOT NULL REFERENCES employees(id),
-  doc_type     TEXT NOT NULL CHECK (doc_type IN ('payslip', 'offer-letter', 'id-proof', 'other')),
+  -- Matches DOCUMENT_TYPES in src/lib/documentStore.ts exactly (the frontend's
+  -- real dropdown list — the original 'payslip'/'offer-letter'/'id-proof'/
+  -- 'other' set here was never what the UI actually sent).
+  doc_type     TEXT NOT NULL CHECK (doc_type IN ('Aadhar Card', 'PAN Card', 'Degree Certificate', 'Offer Letter', 'Bank Details', 'NDA', 'Resume', 'Other')),
   label        TEXT NOT NULL,
+  file_name    TEXT NOT NULL DEFAULT '', -- original filename, kept separately so it doesn't need to be parsed back out of storage_path
   storage_path TEXT NOT NULL,              -- private Supabase Storage object path; never a public URL
   uploaded_by  TEXT REFERENCES employees(id),
   uploaded_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_employee_documents_employee_id ON employee_documents(employee_id);
+
+-- ───────────────────────── Onboarding ─────────────────────────
+-- New-joinee onboarding tracking (src/screens/hr/OnboardingHR.tsx). id is a
+-- client-supplied TEXT primary key (the screen generates it as
+-- `ob-${Date.now()}`, same as leads/job_requisitions above).
+-- checklist_done/doc_items hold the fixed-shape onboarding checklist and
+-- required-document checkboxes as small JSONB values — same pattern as
+-- exit_records.clearance_checklist, not a separate table, since neither
+-- CHECKLIST nor REQUIRED_DOCS (both defined in OnboardingHR.tsx) is
+-- something users add arbitrary new rows to.
+CREATE TABLE onboarding_candidates (
+  id                  TEXT PRIMARY KEY,
+  name                TEXT NOT NULL,
+  role                TEXT NOT NULL DEFAULT 'agent',
+  team                TEXT NOT NULL DEFAULT '',
+  joining_date        TEXT NOT NULL,
+  email               TEXT NOT NULL DEFAULT '',
+  phone               TEXT NOT NULL DEFAULT '',
+  doc_status          TEXT NOT NULL DEFAULT 'missing' CHECK (doc_status IN ('complete', 'pending', 'missing')),
+  onboarding_progress INTEGER NOT NULL DEFAULT 0,
+  checklist_done      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  doc_items           JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_onboarding_candidates_created_at ON onboarding_candidates(created_at);

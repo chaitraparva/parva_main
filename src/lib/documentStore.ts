@@ -1,20 +1,11 @@
 import type { EmployeeDocument } from '../types'
-import { readFileAsDataUrl, downloadDataUrl, downloadZip } from './files'
+import * as api from './api'
+import { downloadZip } from './files'
 
-// ─────────────────────── Document storage (temporary) ───────────────────────
-// There's no live backend connected yet (it's built — server/src/routes/
-// documents.js already uploads to Supabase Storage — but it's waiting on
-// Supabase/Vercel Pro to be purchased and connected). Until then, uploaded
-// files are kept as base64 data URLs in this browser's localStorage, the
-// same stopgap already used for first-time login passwords in Login.tsx.
-// Two real limitations this brings until the backend is live: documents
-// only exist in the browser they were uploaded from (not shared across
-// devices), and localStorage has a small quota (a few MB per browser), so
-// there's a per-file size cap below. Both go away once Supabase Storage is
-// connected — nothing here needs to change on this screen when that happens,
-// only the storage functions underneath it.
-const STORAGE_KEY = 'parva_documents'
-const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2MB per file — generous for a scanned ID or offer letter PDF while keeping a handful of uploads well under a browser's localStorage quota
+// ─────────────────────── Document storage (real backend) ───────────────────────
+// Backed by Postgres + Supabase Storage (server/src/routes/documents.js) —
+// no localStorage involved. Every function here is now async since it talks
+// to the network; see DocumentsPanel.tsx for how it's consumed.
 
 export const DOCUMENT_TYPES = [
   'Aadhar Card',
@@ -27,72 +18,48 @@ export const DOCUMENT_TYPES = [
   'Other',
 ]
 
-function readAll(): EmployeeDocument[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as EmployeeDocument[]) : []
-  } catch {
-    return []
+function fromRaw(raw: api.RawEmployeeDocument): EmployeeDocument {
+  return {
+    id: raw.id,
+    employeeId: raw.employeeId,
+    docType: raw.docType,
+    fileName: raw.fileName,
+    uploadedAt: raw.uploadedAt,
+    uploadedById: raw.uploadedBy,
   }
 }
 
-function writeAll(docs: EmployeeDocument[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(docs))
+/** All documents on file for one employee, most recently uploaded first (the API already orders them this way). */
+export async function listDocuments(employeeId: string): Promise<EmployeeDocument[]> {
+  const raw = await api.fetchDocuments(employeeId)
+  return raw.map(fromRaw)
 }
 
-/** All documents on file for one employee, most recently uploaded first. */
-export function listDocuments(employeeId: string): EmployeeDocument[] {
-  return readAll()
-    .filter(d => d.employeeId === employeeId)
-    .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
+export async function uploadDocument(opts: { employeeId: string; docType: string; file: File }): Promise<EmployeeDocument> {
+  const raw = await api.uploadDocument(opts)
+  return fromRaw(raw)
 }
 
-export async function uploadDocument(opts: {
-  employeeId: string
-  docType: string
-  file: File
-  uploadedById: string
-  uploadedByName: string
-}): Promise<EmployeeDocument> {
-  if (opts.file.size > MAX_FILE_BYTES) {
-    throw new Error(`"${opts.file.name}" is ${(opts.file.size / (1024 * 1024)).toFixed(1)}MB — please upload a file under 2MB.`)
-  }
-  const dataUrl = await readFileAsDataUrl(opts.file)
-  const doc: EmployeeDocument = {
-    id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    employeeId: opts.employeeId,
-    docType: opts.docType,
-    fileName: opts.file.name,
-    dataUrl,
-    uploadedAt: new Date().toISOString(),
-    uploadedById: opts.uploadedById,
-    uploadedByName: opts.uploadedByName,
-  }
-  const all = readAll()
-  all.push(doc)
-  try {
-    writeAll(all)
-  } catch {
-    throw new Error('Could not save this file — your browser storage is full. Try removing an older document first.')
-  }
-  return doc
+export async function deleteDocument(id: string): Promise<void> {
+  await api.deleteDocument(id)
 }
 
-export function deleteDocument(id: string) {
-  writeAll(readAll().filter(d => d.id !== id))
-}
-
-export function downloadDocument(doc: EmployeeDocument) {
-  downloadDataUrl(doc.fileName, doc.dataUrl)
+/** Downloads one document, forcing its original filename via a short-lived signed URL. */
+export async function downloadDocument(doc: EmployeeDocument): Promise<void> {
+  const url = await api.fetchDocumentDownloadUrl(doc.id, doc.fileName)
+  window.open(url, '_blank')
 }
 
 /** Bundles every document on file for one employee into a single .zip. Returns false if there was nothing to download. */
 export async function downloadAllDocuments(employeeId: string, employeeName: string): Promise<boolean> {
-  const docs = listDocuments(employeeId)
+  const docs = await listDocuments(employeeId)
   if (docs.length === 0) return false
-  await downloadZip(
-    `${employeeName.replace(/\s+/g, '_')}_Documents.zip`,
-    docs.map(d => ({ name: `${d.docType} - ${d.fileName}`, dataUrl: d.dataUrl }))
-  )
+  const files: { name: string; blob: Blob }[] = []
+  for (const d of docs) {
+    const url = await api.fetchDocumentDownloadUrl(d.id)
+    const res = await fetch(url)
+    files.push({ name: `${d.docType} - ${d.fileName}`, blob: await res.blob() })
+  }
+  await downloadZip(`${employeeName.replace(/\s+/g, '_')}_Documents.zip`, files)
   return true
 }

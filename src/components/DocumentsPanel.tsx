@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import type { EmployeeDocument } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import type { EmployeeDocument, Employee } from '../types'
 import { Upload, Download, FileText, Trash2, Loader } from 'lucide-react'
 import { DOCUMENT_TYPES, listDocuments, uploadDocument, deleteDocument, downloadDocument, downloadAllDocuments } from '../lib/documentStore'
 
@@ -17,9 +17,11 @@ interface Props {
   /** Whose documents this panel shows/manages. */
   employeeId: string
   employeeName: string
-  /** The person currently using the app — recorded against anything they upload, and used to label uploads made on someone else's behalf. */
+  /** The person currently using the app — used to label uploads made on someone else's behalf. Who actually uploaded a file is recorded server-side from the signed-in session, never trusted from these props. */
   viewerId: string
   viewerName: string
+  /** Used only to resolve "uploaded by" names for display; optional since not every screen has the full roster handy. */
+  employees?: Employee[]
   /** Can the current viewer add new documents here? Defaults to true. */
   canUpload?: boolean
   /** Can the current viewer remove documents here? Defaults to canUpload. */
@@ -29,26 +31,43 @@ interface Props {
 }
 
 export default function DocumentsPanel({
-  employeeId, employeeName, viewerId, viewerName,
+  employeeId, employeeName, employees = [],
   canUpload = true, canDelete, title = 'Documents', description,
 }: Props) {
   const allowDelete = canDelete ?? canUpload
-  const [docs, setDocs] = useState<EmployeeDocument[]>(() => listDocuments(employeeId))
+  const [docs, setDocs] = useState<EmployeeDocument[]>([])
+  const [loading, setLoading] = useState(true)
   const [docType, setDocType] = useState(DOCUMENT_TYPES[0])
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [flash, setFlash] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const refresh = () => setDocs(listDocuments(employeeId))
+  const nameFor = (id: string | null) => (id && employees.find(e => e.id === id)?.name) || id || 'Unknown'
+
+  async function refresh() {
+    try {
+      setDocs(await listDocuments(employeeId))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load documents.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    setLoading(true)
+    refresh()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeeId])
 
   async function handleFile(file: File | null | undefined) {
     if (!file) return
     setError('')
     setUploading(true)
     try {
-      await uploadDocument({ employeeId, docType, file, uploadedById: viewerId, uploadedByName: viewerName })
-      refresh()
+      await uploadDocument({ employeeId, docType, file })
+      await refresh()
       setFlash(`${docType} uploaded.`)
       setTimeout(() => setFlash(''), 2500)
     } catch (err) {
@@ -58,14 +77,24 @@ export default function DocumentsPanel({
     }
   }
 
-  function handleDelete(doc: EmployeeDocument) {
-    deleteDocument(doc.id)
-    refresh()
+  async function handleDelete(doc: EmployeeDocument) {
+    setError('')
+    try {
+      await deleteDocument(doc.id)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete this document.')
+    }
   }
 
   async function handleDownloadAll() {
-    const ok = await downloadAllDocuments(employeeId, employeeName)
-    if (!ok) setError('No documents on file yet to download.')
+    setError('')
+    try {
+      const ok = await downloadAllDocuments(employeeId, employeeName)
+      if (!ok) setError('No documents on file yet to download.')
+    } catch {
+      setError('Could not download these documents. Please try again.')
+    }
   }
 
   return (
@@ -117,7 +146,9 @@ export default function DocumentsPanel({
       {error && <p className="text-xs font-medium" style={{ color: '#DC2626' }}>{error}</p>}
       {flash && <p className="text-xs font-medium" style={{ color: '#059669' }}>✓ {flash}</p>}
 
-      {docs.length === 0 ? (
+      {loading ? (
+        <p className="text-sm text-muted-foreground flex items-center gap-2"><Loader size={13} className="animate-spin" /> Loading documents…</p>
+      ) : docs.length === 0 ? (
         <p className="text-sm text-muted-foreground">No documents on file yet.</p>
       ) : (
         <div className="space-y-2">
@@ -129,13 +160,13 @@ export default function DocumentsPanel({
                   <p className="text-sm font-medium text-foreground truncate">{doc.docType}</p>
                   <p className="text-[11px] text-muted-foreground truncate">
                     {doc.fileName} · {formatDate(doc.uploadedAt)}
-                    {doc.uploadedById !== employeeId && ` · uploaded by ${doc.uploadedByName}`}
+                    {doc.uploadedById && doc.uploadedById !== employeeId && ` · uploaded by ${nameFor(doc.uploadedById)}`}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button
-                  onClick={() => downloadDocument(doc)}
+                  onClick={() => downloadDocument(doc).catch(() => setError('Could not download this file. Please try again.'))}
                   className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                   title="Download"
                   aria-label={`Download ${doc.docType}`}

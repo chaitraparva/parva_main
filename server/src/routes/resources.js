@@ -145,3 +145,19 @@ export const leadsRouter = crudRouter({
     'budget', 'propertyType', 'location', 'followUpDate', 'notes', 'lastActivity',
   ],
 })
+
+// onboarding_candidates.id is a client-supplied TEXT primary key
+// (OnboardingHR.tsx generates it as `ob-${Date.now()}`, same as job
+// requisitions/leads above). checklistDone/docItems are small JSONB columns
+// holding the fixed-shape onboarding checklist and required-document
+// checkboxes (see CHECKLIST/REQUIRED_DOCS in OnboardingHR.tsx) — same
+// pattern as exit_records.clearanceChecklist, not a separate table, since
+// neither list is something users add arbitrary new rows to.
+export const onboardingCandidatesRouter = crudRouter({
+  table: 'onboarding_candidates',
+  allowedColumns: [
+    'id', 'name', 'role', 'team', 'joiningDate', 'email', 'phone',
+    'docStatus', 'onboardingProgress', 'checklistDone', 'docItems',
+  ],
+  writeRoles: ['hr', 'management'],
+})

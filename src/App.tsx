@@ -4,7 +4,6 @@ import type {
   EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal,
   PerformanceReview, Notification, TimesheetEntry, Lead, ActivityType,
 } from './types'
-import * as mockData from './data/mockData'
 import * as api from './lib/api'
 import type { Session } from './lib/api'
 import Login from './screens/Login'
@@ -178,14 +177,33 @@ function leadFieldsOf(l: Lead): Omit<api.RawLead, 'id' | 'createdAt'> {
 }
 
 // Onboarding candidate as used across the (loosely-typed) Onboarding screens.
+// checklistDone/docItems are the granular per-item checklist/document
+// checkboxes OnboardingHR.tsx used to keep only in its own local state —
+// they're real fields now (JSONB columns), so they flow through the same
+// generic diff-and-sync update as every other field below.
 interface OnboardingCandidate {
   id: string
   name: string
   role: string
   team: string
   joiningDate: string
+  email?: string
+  phone?: string
   docStatus: string
   onboardingProgress: number
+  checklistDone: string[]
+  docItems: Record<string, boolean>
+}
+
+const ONBOARDING_FIELDS = [
+  'name', 'role', 'team', 'joiningDate', 'email', 'phone',
+  'docStatus', 'onboardingProgress', 'checklistDone', 'docItems',
+] as const
+
+function onboardingFieldsOf(o: OnboardingCandidate): Omit<api.RawOnboardingCandidate, 'id'> {
+  const out: Record<string, unknown> = {}
+  for (const f of ONBOARDING_FIELDS) out[f] = (o as unknown as Record<string, unknown>)[f] ?? null
+  return out as Omit<api.RawOnboardingCandidate, 'id'>
 }
 
 export default function App() {
@@ -251,7 +269,11 @@ export default function App() {
   const [goalsLoaded, setGoalsLoaded] = useState(false)
   const [rawReviews, setRawReviews] = useState<api.RawPerformanceReview[]>([])
   const [reviewsLoaded, setReviewsLoaded] = useState(false)
-  const [onboarding, setOnboarding] = useState<OnboardingCandidate[]>(mockData.onboardingCandidates)
+  // Onboarding is real now too — see rawOnboarding/onboarding below. id is a
+  // client-supplied TEXT primary key (OnboardingHR.tsx generates it as
+  // `ob-${Date.now()}`, same as job requisitions/leads).
+  const [rawOnboarding, setRawOnboarding] = useState<api.RawOnboardingCandidate[]>([])
+  const [onboardingLoaded, setOnboardingLoaded] = useState(false)
   // Notifications are real now too — see rawNotifications/notifications
   // below. Nothing in the app creates one yet (no screen has a "new
   // notification" flow) — only mark-as-read exists — so this only ever
@@ -586,7 +608,40 @@ export default function App() {
         }
       })()
   }
-  const onOnboardingUpdate = (next: OnboardingCandidate[]) => { setOnboarding(next) }
+  // Same generic diff-and-sync approach as onRequisitionsUpdate/onLeadsUpdate
+  // above — onboarding_candidates.id is a client-supplied TEXT primary key,
+  // so create() sends it explicitly. Every field OnboardingHR.tsx touches
+  // (the coarse candidate fields AND the granular checklistDone/docItems
+  // checkboxes) is a real column, so a single diff covers all of it.
+  const onOnboardingUpdate = (next: OnboardingCandidate[]) => {
+    const prevById = new Map(onboarding.map(o => [o.id, o]))
+    const created = next.filter(o => !prevById.has(o.id))
+    const updated = next.filter(o => {
+      const prev = prevById.get(o.id)
+      return prev && JSON.stringify(onboardingFieldsOf(prev)) !== JSON.stringify(onboardingFieldsOf(o))
+    })
+
+    setRawOnboarding(next.map(o => ({ id: o.id, ...onboardingFieldsOf(o) } as api.RawOnboardingCandidate)))
+
+      ; (async () => {
+        try {
+          for (const o of created) {
+            await api.createOnboardingCandidate({ id: o.id, ...onboardingFieldsOf(o) } as api.RawOnboardingCandidate)
+          }
+          for (const o of updated) {
+            await api.updateOnboardingCandidate(o.id, onboardingFieldsOf(o))
+          }
+        } catch (err) {
+          console.error('Failed to save an onboarding change to the server', err)
+        } finally {
+          try {
+            setRawOnboarding(await api.fetchOnboardingCandidates())
+          } catch {
+            // Offline/unreachable — stay on the optimistic state.
+          }
+        }
+      })()
+  }
   // Same generic diff-and-sync approach as the other modules — in practice
   // only `read` ever changes (see Notifications.tsx's markRead/markAllRead),
   // and nothing ever adds a new id from this screen, but this stays
@@ -734,6 +789,8 @@ export default function App() {
     setLeadsLoaded(false)
     setRawLeadActivities([])
     setLeadActivitiesLoaded(false)
+    setRawOnboarding([])
+    setOnboardingLoaded(false)
     setScreen('hr-dashboard')
   }
 
@@ -1011,6 +1068,23 @@ export default function App() {
     return () => { cancelled = true }
   }, [role, leadsLoaded])
 
+  // Same pattern, for onboarding candidates.
+  useEffect(() => {
+    if (!role || onboardingLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchOnboardingCandidates()
+          if (!cancelled) setRawOnboarding(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setOnboardingLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, onboardingLoaded])
+
   // Same pattern, for lead activities (a separate table — see api.ts).
   useEffect(() => {
     if (!role || leadActivitiesLoaded) return
@@ -1219,6 +1293,17 @@ export default function App() {
       .map(a => ({ id: String(a.id), type: a.type, description: a.description, by: a.byName, timestamp: formatCommentAt(a.createdAt) })),
   }))
   const myLeads = leads.filter(l => l.assignedTo === currentEmployeeId)
+
+  // Onboarding candidates need no join — every field OnboardingHR.tsx shows
+  // (including checklistDone/docItems) is a real column now. joining_date is
+  // a plain TEXT column (not DATE), same as leads.followUpDate, specifically
+  // to avoid needing the toDateOnly ISO-timestamp trimming every DATE/
+  // TIMESTAMPTZ column in this app needs.
+  const onboarding: OnboardingCandidate[] = rawOnboarding.map(o => ({
+    ...o,
+    checklistDone: o.checklistDone || [],
+    docItems: o.docItems || {},
+  }))
 
   const unreadCount = notifications.filter(n => !n.read).length
   const sharedLeaveProps = { leaves, onLeaveUpdate }

@@ -592,3 +592,89 @@ export async function createLeadActivity(leadId: string, type: RawLeadActivity['
   })
   return data.lead_activity
 }
+
+// ─────────────────────── Employee documents ───────────────────────
+// Real backend storage (Supabase Storage), same base64-through-server
+// upload pattern as expense receipts above — see server/src/routes/documents.js.
+export interface RawEmployeeDocument {
+  id: string
+  employeeId: string
+  docType: string
+  label: string
+  fileName: string
+  storagePath: string
+  uploadedBy: string | null
+  uploadedAt: string
+}
+
+export async function fetchDocuments(employeeId: string): Promise<RawEmployeeDocument[]> {
+  const data = await request<{ documents: RawEmployeeDocument[] }>(`/api/documents?employeeId=${encodeURIComponent(employeeId)}`, { method: 'GET' })
+  return data.documents
+}
+
+export async function uploadDocument(opts: { employeeId: string; docType: string; file: File }): Promise<RawEmployeeDocument> {
+  const dataBase64 = await fileToBase64(opts.file)
+  const data = await request<{ document: RawEmployeeDocument }>('/api/documents', {
+    method: 'POST',
+    body: JSON.stringify({
+      employeeId: opts.employeeId,
+      docType: opts.docType,
+      filename: opts.file.name,
+      contentType: opts.file.type,
+      dataBase64,
+    }),
+  })
+  return data.document
+}
+
+// Pass downloadFilename to get a link that forces a browser download with
+// that filename instead of one meant just for inline viewing.
+export async function fetchDocumentDownloadUrl(id: string, downloadFilename?: string): Promise<string> {
+  const query = downloadFilename ? `?download=${encodeURIComponent(downloadFilename)}` : ''
+  const data = await request<{ downloadUrl: string }>(`/api/documents/${encodeURIComponent(id)}/download-url${query}`, { method: 'GET' })
+  return data.downloadUrl
+}
+
+export async function deleteDocument(id: string): Promise<void> {
+  await request<void>(`/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+// ─────────────────────── Onboarding candidates ───────────────────────
+// checklistDone/docItems are small JSONB columns holding the fixed-shape
+// onboarding checklist and required-document checkboxes (see CHECKLIST/
+// REQUIRED_DOCS in OnboardingHR.tsx) — same pattern as exit_records'
+// clearanceChecklist, not a separate table.
+export interface RawOnboardingCandidate {
+  id: string
+  name: string
+  role: string
+  team: string
+  joiningDate: string
+  email: string
+  phone: string
+  docStatus: string
+  onboardingProgress: number
+  checklistDone: string[]
+  docItems: Record<string, boolean>
+}
+
+export async function fetchOnboardingCandidates(): Promise<RawOnboardingCandidate[]> {
+  const data = await request<{ onboarding_candidates: RawOnboardingCandidate[] }>('/api/onboarding-candidates', { method: 'GET' })
+  return data.onboarding_candidates
+}
+
+export async function createOnboardingCandidate(input: RawOnboardingCandidate): Promise<RawOnboardingCandidate> {
+  const data = await request<{ onboarding_candidate: RawOnboardingCandidate }>('/api/onboarding-candidates', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.onboarding_candidate
+}
+
+export async function updateOnboardingCandidate(id: string, patch: Partial<Omit<RawOnboardingCandidate, 'id'>>): Promise<RawOnboardingCandidate> {
+  const data = await request<{ onboarding_candidate: RawOnboardingCandidate }>(`/api/onboarding-candidates/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.onboarding_candidate
+}

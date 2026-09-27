@@ -314,19 +314,17 @@ export interface PerformanceReview {
 }
 
 // ---- Employee Documents ----
-// Every uploaded document (ID proofs, certificates, offer letters, etc.),
-// stored client-side for now — see src/lib/documentStore.ts for the
-// storage mechanism and its planned migration to the real backend
-// (Supabase Storage, already built server-side).
+// Every uploaded document (ID proofs, certificates, offer letters, etc.) —
+// backed by the real backend (Postgres + Supabase Storage), see
+// src/lib/documentStore.ts. uploadedByName isn't stored here since it's
+// resolved from the employees list at display time (DocumentsPanel.tsx).
 export interface EmployeeDocument {
   id: string
   employeeId: string
   docType: string
   fileName: string
-  dataUrl: string
   uploadedAt: string
-  uploadedById: string
-  uploadedByName: string
+  uploadedById: string | null
 }
 
 // ---- Timesheets ----

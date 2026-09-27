@@ -200,6 +200,7 @@ export default function Directory({ employees, currentEmployeeId, onEmployeesUpd
               employeeName={selectedEmp.name}
               viewerId={viewer?.id || currentEmployeeId || selectedEmp.id}
               viewerName={viewer?.name || 'HR'}
+              employees={employees}
               description={`Upload documents on ${selectedEmp.name.split(' ')[0]}'s behalf, or download what's already on file.`}
             />
           </div>
