@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type {
   Role, LeaveRequest, Employee, ExpenseClaim, PayrollRecord, AttendanceRecord,
   EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal,
-  PerformanceReview, Notification,
+  PerformanceReview, Notification, TimesheetEntry,
 } from './types'
 import * as mockData from './data/mockData'
 import * as api from './lib/api'
@@ -194,6 +194,11 @@ export default function App() {
   // Attendance records are real now too — see rawAttendance/attendance below.
   const [rawAttendance, setRawAttendance] = useState<api.RawAttendanceRecord[]>([])
   const [attendanceLoaded, setAttendanceLoaded] = useState(false)
+  // Timesheet entries are real now too — see rawTimesheet/timesheet below.
+  // Previously these lived only in localStorage with a hardcoded seed (see
+  // src/lib/timesheetStore.ts) — both are gone now.
+  const [rawTimesheet, setRawTimesheet] = useState<api.RawTimesheetEntry[]>([])
+  const [timesheetLoaded, setTimesheetLoaded] = useState(false)
   // Employee tickets are real now too — see rawTickets/tickets below.
   // Comments are fetched separately (they live in their own table, not a
   // column on tickets — see api.ts) and grouped in by ticketId when tickets
@@ -398,6 +403,30 @@ export default function App() {
         }
       })()
   }
+  // Timesheets don't follow the same "diff a whole array" shape as the
+  // modules above — MyTimesheet.tsx saves exactly one day's entry at a time.
+  // A real UNIQUE(employee_id, date) constraint backs this now (see the
+  // migration), so this looks for an existing row for that employee+date in
+  // what's already loaded and PATCHes it; otherwise it POSTs a new one.
+  const onSaveTimesheetEntry = async (entry: Omit<TimesheetEntry, 'id' | 'loggedAt'>) => {
+    const existing = timesheet.find(t => t.employeeId === entry.employeeId && t.date === entry.date)
+    const loggedAt = new Date().toISOString()
+    try {
+      if (existing) {
+        await api.updateTimesheetEntry(existing.id, { ...entry, loggedAt })
+      } else {
+        await api.createTimesheetEntry({ ...entry, loggedAt })
+      }
+    } catch (err) {
+      console.error('Failed to save a timesheet entry to the server', err)
+    } finally {
+      try {
+        setRawTimesheet(await api.fetchTimesheetEntries())
+      } catch {
+        // Offline/unreachable — stay on whatever's already shown.
+      }
+    }
+  }
   // Same generic diff-and-sync approach as onPayrollUpdate/onAttendanceUpdate
   // — comments are excluded from TICKET_FIELDS entirely (they're not a
   // column here, see api.ts/ticketFieldsOf), so adding a reply never runs
@@ -549,6 +578,8 @@ export default function App() {
     setPayrollLoaded(false)
     setRawAttendance([])
     setAttendanceLoaded(false)
+    setRawTimesheet([])
+    setTimesheetLoaded(false)
     setRawExpenses([])
     setExpensesLoaded(false)
     setRawTickets([])
@@ -654,6 +685,23 @@ export default function App() {
       })()
     return () => { cancelled = true }
   }, [role, attendanceLoaded])
+
+  // Same pattern, for timesheet entries.
+  useEffect(() => {
+    if (!role || timesheetLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchTimesheetEntries()
+          if (!cancelled) setRawTimesheet(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setTimesheetLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, timesheetLoaded])
 
   // Same pattern, for expense claims.
   useEffect(() => {
@@ -844,6 +892,17 @@ export default function App() {
     }
   })
 
+  // Same idea — timesheet_entries doesn't need an employeeName join at all;
+  // both MyTimesheet and TeamTimesheet already resolve the display name
+  // themselves from the `employees` list they're given. Just the usual
+  // id-to-string and date-column trimming.
+  const timesheet: TimesheetEntry[] = rawTimesheet.map(r => ({
+    ...r,
+    id: String(r.id),
+    date: toDateOnly(r.date),
+    totalHours: Number(r.totalHours),
+  }))
+
   // Same idea — expense_claims doesn't store the employee's name/department,
   // and has no column yet for the actual receipt image (see api.ts).
   const expenses: ExpenseClaim[] = rawExpenses.map(r => {
@@ -1024,9 +1083,9 @@ export default function App() {
       case 'attendance-hr':
         return <AttendanceHR employees={employees} attendance={attendance} onAttendanceUpdate={onAttendanceUpdate} />
       case 'my-timesheet':
-        return <MyTimesheet employeeId={employeeId} employees={employees} />
+        return <MyTimesheet employeeId={employeeId} employees={employees} timesheet={timesheet} onSaveEntry={onSaveTimesheetEntry} />
       case 'team-timesheet':
-        return <TeamTimesheet employees={employees} />
+        return <TeamTimesheet employees={employees} timesheet={timesheet} />
       case 'leave':
         return <Leave role={role} employees={employees} {...sharedLeaveProps} />
       case 'payroll-hr':

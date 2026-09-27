@@ -8,7 +8,7 @@
 // the user back to the sign-in screen — see restoreSession() below, called
 // once from App.tsx on mount.
 
-import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal, PerformanceReview } from '../types'
+import type { Employee, Role, LeaveRequest, PayrollRecord, AttendanceRecord, ExpenseClaim, EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal, PerformanceReview, TimesheetEntry } from '../types'
 
 const TOKEN_KEY = 'parva_auth_token'
 
@@ -253,6 +253,37 @@ export type RawAttendanceRecord = Omit<AttendanceRecord, 'employeeName'>
 export async function fetchAttendanceRecords(): Promise<RawAttendanceRecord[]> {
   const data = await request<{ attendance_records: RawAttendanceRecord[] }>('/api/attendance-records', { method: 'GET' })
   return data.attendance_records
+}
+
+// ─────────────────────── Timesheet entries ───────────────────────
+// Real backend storage for the CRM Timesheet feature (My Timesheet / Team
+// Timesheet) — previously this lived only in the browser's localStorage
+// (src/lib/timesheetStore.ts), including a hardcoded seed of one employee's
+// real entries so the screen wasn't empty. Both are removed now that this
+// hits Postgres like every other module. One row per employee per day (a
+// UNIQUE constraint enforces it server-side) — App.tsx's onSaveTimesheetEntry
+// decides whether a given date is a create or an update.
+export type RawTimesheetEntry = TimesheetEntry
+
+export async function fetchTimesheetEntries(): Promise<RawTimesheetEntry[]> {
+  const data = await request<{ timesheet_entries: RawTimesheetEntry[] }>('/api/timesheet-entries', { method: 'GET' })
+  return data.timesheet_entries
+}
+
+export async function createTimesheetEntry(input: Omit<RawTimesheetEntry, 'id'>): Promise<RawTimesheetEntry> {
+  const data = await request<{ timesheet_entry: RawTimesheetEntry }>('/api/timesheet-entries', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.timesheet_entry
+}
+
+export async function updateTimesheetEntry(id: string, patch: Partial<Omit<RawTimesheetEntry, 'id'>>): Promise<RawTimesheetEntry> {
+  const data = await request<{ timesheet_entry: RawTimesheetEntry }>(`/api/timesheet-entries/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return data.timesheet_entry
 }
 
 export async function createAttendanceRecord(input: Omit<RawAttendanceRecord, 'id'>): Promise<RawAttendanceRecord> {

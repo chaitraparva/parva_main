@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Employee, TimesheetEntry } from '../../types'
-import { listAllEntries, ensureSeeded } from '../../lib/timesheetStore'
 import { downloadCsv } from '../../lib/csv'
 import { ClipboardList, Download } from 'lucide-react'
 
@@ -13,17 +12,13 @@ function dayName(iso: string) {
 
 interface TeamTimesheetProps {
   employees: Employee[]
+  timesheet: TimesheetEntry[]
 }
 
-export default function TeamTimesheet({ employees }: TeamTimesheetProps) {
-  const [entries, setEntries] = useState<TimesheetEntry[]>([])
+export default function TeamTimesheet({ employees, timesheet }: TeamTimesheetProps) {
+  const entries = useMemo(() => [...timesheet].sort((a, b) => b.date.localeCompare(a.date)), [timesheet])
   const [employeeFilter, setEmployeeFilter] = useState('')
   const [dateFilter, setDateFilter] = useState('')
-
-  useEffect(() => {
-    ensureSeeded()
-    setEntries(listAllEntries())
-  }, [])
 
   const nameFor = (employeeId: string) => employees.find(e => e.id === employeeId)?.name || employeeId
 
@@ -83,10 +78,10 @@ export default function TeamTimesheet({ employees }: TeamTimesheetProps) {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { title: 'Entries',       value: summary.entries },
-          { title: 'Total Hours',   value: summary.hours.toFixed(1) },
-          { title: 'Calls Made',    value: summary.calls },
-          { title: 'Sales Closed',  value: summary.sales },
+          { title: 'Entries', value: summary.entries },
+          { title: 'Total Hours', value: summary.hours.toFixed(1) },
+          { title: 'Calls Made', value: summary.calls },
+          { title: 'Sales Closed', value: summary.sales },
         ].map(s => (
           <div key={s.title} className="bg-card rounded-xl border border-border shadow-sm p-5">
             <p className="font-serif text-2xl font-bold" style={{ color: navy }}>{s.value}</p>

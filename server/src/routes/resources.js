@@ -37,6 +37,18 @@ export const attendanceRouter = crudRouter({
   writeRoles: ['manager', 'hr', 'management'],
 })
 
+export const timesheetEntriesRouter = crudRouter({
+  table: 'timesheet_entries',
+  allowedColumns: [
+    'employeeId', 'date', 'shiftStart', 'shiftEnd', 'totalHours', 'leadsAssigned',
+    'callsMade', 'connectedCalls', 'followUpsScheduled', 'clientAppointmentsSet',
+    'salesClosed', 'companyFundedLeads', 'selfFundedLeads', 'tasks', 'loggedAt',
+  ],
+  // Every CRM employee logs their own day (POST) and can go back and correct
+  // an earlier entry (PATCH) — there's no approval workflow here, unlike
+  // leave/expenses/tickets, so this stays open to any signed-in employee.
+})
+
 export const expenseClaimsRouter = crudRouter({
   table: 'expense_claims',
   allowedColumns: [

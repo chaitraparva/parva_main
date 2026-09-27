@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Employee, TimesheetEntry } from '../../types'
-import { listEntries, saveEntry, computeHours, ensureSeeded } from '../../lib/timesheetStore'
+import { computeHours } from '../../lib/timesheetStore'
 import { Clock, Save, CheckCircle2, Calendar } from 'lucide-react'
 
 const navy = '#1C2B4A'
@@ -32,20 +32,18 @@ const emptyForm = (date: string) => ({
 interface MyTimesheetProps {
   employeeId: string
   employees: Employee[]
+  timesheet: TimesheetEntry[]
+  onSaveEntry: (entry: Omit<TimesheetEntry, 'id' | 'loggedAt'>) => Promise<void>
 }
 
-export default function MyTimesheet({ employeeId, employees }: MyTimesheetProps) {
+export default function MyTimesheet({ employeeId, employees, timesheet, onSaveEntry }: MyTimesheetProps) {
   const me = employees.find(e => e.id === employeeId)
-  const [entries, setEntries] = useState<TimesheetEntry[]>([])
+  const entries = timesheet
+    .filter(e => e.employeeId === employeeId)
+    .sort((a, b) => b.date.localeCompare(a.date))
   const [form, setForm] = useState(emptyForm(todayIso()))
   const [savedFlash, setSavedFlash] = useState(false)
-
-  useEffect(() => {
-    ensureSeeded()
-    setEntries(listEntries(employeeId))
-  }, [employeeId])
-
-  const refresh = () => setEntries(listEntries(employeeId))
+  const [saving, setSaving] = useState(false)
 
   const loadDay = (date: string) => {
     const existing = entries.find(e => e.date === date)
@@ -70,27 +68,31 @@ export default function MyTimesheet({ employeeId, employees }: MyTimesheetProps)
     setSavedFlash(false)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.date) return
-    saveEntry({
-      employeeId,
-      date: form.date,
-      shiftStart: form.shiftStart,
-      shiftEnd: form.shiftEnd,
-      totalHours: computeHours(form.shiftStart, form.shiftEnd),
-      leadsAssigned: Number(form.leadsAssigned) || 0,
-      callsMade: Number(form.callsMade) || 0,
-      connectedCalls: Number(form.connectedCalls) || 0,
-      followUpsScheduled: Number(form.followUpsScheduled) || 0,
-      clientAppointmentsSet: Number(form.clientAppointmentsSet) || 0,
-      salesClosed: Number(form.salesClosed) || 0,
-      companyFundedLeads: form.companyFundedLeads,
-      selfFundedLeads: form.selfFundedLeads,
-      tasks: form.tasks,
-    })
-    refresh()
-    setSavedFlash(true)
-    setTimeout(() => setSavedFlash(false), 2500)
+    setSaving(true)
+    try {
+      await onSaveEntry({
+        employeeId,
+        date: form.date,
+        shiftStart: form.shiftStart,
+        shiftEnd: form.shiftEnd,
+        totalHours: computeHours(form.shiftStart, form.shiftEnd),
+        leadsAssigned: Number(form.leadsAssigned) || 0,
+        callsMade: Number(form.callsMade) || 0,
+        connectedCalls: Number(form.connectedCalls) || 0,
+        followUpsScheduled: Number(form.followUpsScheduled) || 0,
+        clientAppointmentsSet: Number(form.clientAppointmentsSet) || 0,
+        salesClosed: Number(form.salesClosed) || 0,
+        companyFundedLeads: form.companyFundedLeads,
+        selfFundedLeads: form.selfFundedLeads,
+        tasks: form.tasks,
+      })
+      setSavedFlash(true)
+      setTimeout(() => setSavedFlash(false), 2500)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const numField = (label: string, key: keyof typeof form) => (
@@ -185,10 +187,10 @@ export default function MyTimesheet({ employeeId, employees }: MyTimesheetProps)
         </div>
 
         <div className="flex items-center gap-3">
-          <button onClick={handleSave}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-60"
             style={{ backgroundColor: gold, color: navy }}>
-            <Save size={14} /> Save Entry
+            <Save size={14} /> {saving ? 'Saving…' : 'Save Entry'}
           </button>
           {savedFlash && (
             <span className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#059669' }}>
