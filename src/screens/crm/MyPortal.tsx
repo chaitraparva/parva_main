@@ -52,6 +52,7 @@ interface Props {
   employeeId: string
   employees: Employee[]
   attendance: AttendanceRecord[]
+  onAttendanceUpdate: (next: AttendanceRecord[]) => void
   tickets: EmployeeTicket[]
   onTicketsUpdate: (next: EmployeeTicket[]) => void
   onAddTicketComment: (ticketId: string, text: string) => Promise<void>
@@ -71,7 +72,7 @@ function blankRow(): DraftRow {
   return { id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, date: '', category: 'Travel', description: '', amount: '', file: null, previewUrl: null }
 }
 
-export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate: _onExpensesUpdate, onExpensesRefetch, employeeId, employees, attendance: attendanceRecords, tickets, onTicketsUpdate, onAddTicketComment }: Props) {
+export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate: _onExpensesUpdate, onExpensesRefetch, employeeId, employees, attendance: attendanceRecords, onAttendanceUpdate, tickets, onTicketsUpdate, onAddTicketComment }: Props) {
   const [tab, setTab] = useState<Tab>('leave')
   const [leaveFlash, setLeaveFlash] = useState(false)
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '' })
@@ -83,15 +84,48 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
   const meDepartment = me?.department || ''
   const myBalance = me ? computeLeaveBalance(me, leaves) : null
 
+  // Self-service attendance — until biometric attendance is wired up,
+  // everyone marks their own day manually. Same create-or-update-today's-row
+  // pattern as AttendanceHR.tsx's markAttendance(), scoped to just this
+  // employee and today.
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const myTodayAttendance = myAttendance.find(r => r.date === todayIso)
+  // Seeded once from whatever's already on today's record (if any), so
+  // re-marking the same day defaults to what was last saved instead of
+  // silently resetting to "present".
+  const [selfAttForm, setSelfAttForm] = useState(() => {
+    const existing = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
+    return existing
+      ? { checkIn: existing.checkIn, checkOut: existing.checkOut, status: existing.status }
+      : { checkIn: '09:00', checkOut: '18:00', status: 'present' as AttendanceRecord['status'] }
+  })
+  const [selfAttFlash, setSelfAttFlash] = useState(false)
+
+  function markMyAttendance() {
+    const existing = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
+    if (existing) {
+      onAttendanceUpdate(attendanceRecords.map(r => r.id === existing.id ? { ...r, ...selfAttForm } : r))
+    } else {
+      const newRec: AttendanceRecord = {
+        id: `att-${Date.now()}`,
+        employeeId,
+        employeeName: meName,
+        date: todayIso,
+        ...selfAttForm,
+      }
+      onAttendanceUpdate([...attendanceRecords, newRec])
+    }
+    setSelfAttFlash(true)
+    setTimeout(() => setSelfAttFlash(false), 3000)
+  }
+
   // Expenses — a structured, Excel-style sheet: add as many rows as needed,
   // attach a receipt photo per row, see the running total, then submit the
   // whole sheet at once.
   const myExpenses = expenses.filter(e => e.employeeId === employeeId)
-  // Expense claims are limited to once per calendar month — find whether
-  // the current month already has a submitted claim (any status).
-  const currentMonthKey = new Date().toISOString().slice(0, 7)
-  const currentMonthLabel = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-  const alreadyClaimedThisMonth = myExpenses.some(e => (e.claimedOn || '').slice(0, 7) === currentMonthKey)
+  // Expense claims can be filed any day — HR reviews everything submitted
+  // so far at month end (see ExpenseHR.tsx), so there's no per-month limit
+  // here any more.
   const [showExpenseForm, setShowExpenseForm] = useState(false)
   const [rows, setRows] = useState<DraftRow[]>([blankRow()])
   const [expenseError, setExpenseError] = useState('')
@@ -136,10 +170,6 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
   }
 
   async function submitSheet() {
-    if (alreadyClaimedThisMonth) {
-      setExpenseError(`You've already submitted an expense claim for ${currentMonthLabel}. You can submit your next claim next month.`)
-      return
-    }
     const incomplete = rows.some(r => !r.date || !r.description.trim() || !r.amount || parseFloat(r.amount) <= 0)
     if (incomplete) {
       setExpenseError('Please fill in date, category, description and a valid amount for every row before submitting.')
@@ -240,7 +270,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
       status: 'pending',
       appliedOn: new Date().toISOString().slice(0, 10),
       submittedByRole: 'crm',
-      pendingWith: 'manager',
+      pendingWith: 'hr',
     }
     onLeaveUpdate([...leaves, newLeave])
     setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
@@ -318,7 +348,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
         <div className="space-y-4">
           {leaveFlash && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
-              Submitted — pending your Line Manager&apos;s approval.
+              Submitted — pending HR&apos;s approval.
             </div>
           )}
           {/* Leave Balance */}
@@ -435,40 +465,85 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
 
       {/* MY ATTENDANCE TAB */}
       {tab === 'attendance' && (
-        <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-          <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>My Attendance</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[520px]">
-              <thead>
-                <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                  <th className="pb-2 font-medium">Date</th>
-                  <th className="pb-2 font-medium">Check In</th>
-                  <th className="pb-2 font-medium">Check Out</th>
-                  <th className="pb-2 font-medium">Hours</th>
-                  <th className="pb-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myAttendance.map(r => {
-                  let hours = '—'
-                  if (r.checkIn && r.checkOut) {
-                    const [ih, im] = r.checkIn.split(':').map(Number)
-                    const [oh, om] = r.checkOut.split(':').map(Number)
-                    const diff = (oh * 60 + om) - (ih * 60 + im)
-                    hours = `${Math.floor(diff / 60)}h ${diff % 60}m`
-                  }
-                  return (
-                    <tr key={r.id} className="border-b border-border hover:bg-muted/20">
-                      <td className="py-2.5">{r.date}</td>
-                      <td className="py-2.5">{r.checkIn || '—'}</td>
-                      <td className="py-2.5">{r.checkOut || '—'}</td>
-                      <td className="py-2.5">{hours}</td>
-                      <td className="py-2.5"><StatusBadge status={r.status} /></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        <div className="space-y-4">
+          {selfAttFlash && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
+              Today's attendance saved.
+            </div>
+          )}
+          <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+            <h2 className="font-semibold text-base mb-1" style={{ color: navy }}>Mark Today's Attendance</h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              {myTodayAttendance ? `Already marked for today (${todayIso}) — update it below if needed.` : `Not yet marked for today (${todayIso}).`}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Status</label>
+                <select
+                  value={selfAttForm.status}
+                  onChange={e => setSelfAttForm(p => ({ ...p, status: e.target.value as AttendanceRecord['status'] }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none"
+                >
+                  <option value="present">Present</option>
+                  <option value="late">Late</option>
+                  <option value="half-day">Half Day</option>
+                  <option value="absent">Absent</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Check In</label>
+                <input type="time" value={selfAttForm.checkIn} onChange={e => setSelfAttForm(p => ({ ...p, checkIn: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Check Out</label>
+                <input type="time" value={selfAttForm.checkOut} onChange={e => setSelfAttForm(p => ({ ...p, checkOut: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
+              </div>
+              <div className="flex items-end">
+                <button onClick={markMyAttendance}
+                  className="w-full px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90"
+                  style={{ background: navy }}>
+                  {myTodayAttendance ? 'Update' : 'Mark Attendance'}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>My Attendance History</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[520px]">
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                    <th className="pb-2 font-medium">Date</th>
+                    <th className="pb-2 font-medium">Check In</th>
+                    <th className="pb-2 font-medium">Check Out</th>
+                    <th className="pb-2 font-medium">Hours</th>
+                    <th className="pb-2 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myAttendance.map(r => {
+                    let hours = '—'
+                    if (r.checkIn && r.checkOut) {
+                      const [ih, im] = r.checkIn.split(':').map(Number)
+                      const [oh, om] = r.checkOut.split(':').map(Number)
+                      const diff = (oh * 60 + om) - (ih * 60 + im)
+                      hours = `${Math.floor(diff / 60)}h ${diff % 60}m`
+                    }
+                    return (
+                      <tr key={r.id} className="border-b border-border hover:bg-muted/20">
+                        <td className="py-2.5">{r.date}</td>
+                        <td className="py-2.5">{r.checkIn || '—'}</td>
+                        <td className="py-2.5">{r.checkOut || '—'}</td>
+                        <td className="py-2.5">{hours}</td>
+                        <td className="py-2.5"><StatusBadge status={r.status} /></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -494,7 +569,6 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
               </button>
               <button
                 onClick={() => setShowExpenseForm(v => !v)}
-                disabled={!showExpenseForm && alreadyClaimedThisMonth}
                 className="px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: navy }}
               >
@@ -502,12 +576,6 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
               </button>
             </div>
           </div>
-
-          {!showExpenseForm && alreadyClaimedThisMonth && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm font-medium">
-              You've already submitted your expense claim for {currentMonthLabel}. Expense claims can only be filed once a month — you'll be able to submit your next one from next month.
-            </div>
-          )}
 
           <input
             ref={rowFileInputRef}

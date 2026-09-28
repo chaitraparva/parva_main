@@ -1,4 +1,4 @@
-import { LayoutDashboard, FolderOpen, Calendar, UserCheck, CreditCard, Receipt, Building2, DoorOpen, TicketIcon, Bell, Settings, LogOut, BarChart2, Briefcase, ClipboardCheck, TrendingUp, Network, X, ClipboardList, Home } from 'lucide-react'
+import { LayoutDashboard, FolderOpen, Calendar, UserCheck, CreditCard, Receipt, Building2, DoorOpen, TicketIcon, Bell, Settings, LogOut, BarChart2, Briefcase, ClipboardCheck, TrendingUp, Network, X, ClipboardList } from 'lucide-react'
 import type { Role, Employee } from '../../types'
 
 interface NavItem { id: string; label: string; icon: React.ReactNode; section: string }
@@ -9,13 +9,11 @@ interface NavItem { id: string; label: string; icon: React.ReactNode; section: s
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   crm: [
     { id: 'my-portal', label: 'My Portal', icon: <LayoutDashboard size={18} />, section: 'Self Service' },
-    { id: 'my-leads', label: 'My Leads', icon: <Home size={18} />, section: 'Self Service' },
     { id: 'my-timesheet', label: 'My Timesheet', icon: <ClipboardList size={18} />, section: 'Self Service' },
     { id: 'org-chart', label: 'Organisation Chart', icon: <Network size={18} />, section: 'Company' },
   ],
   manager: [
     { id: 'manager-portal', label: 'Team Overview', icon: <LayoutDashboard size={18} />, section: 'Overview' },
-    { id: 'team-leads', label: 'Team Leads', icon: <Home size={18} />, section: 'Team' },
     { id: 'attendance-hr', label: 'Attendance', icon: <Calendar size={18} />, section: 'Team' },
     { id: 'team-timesheet', label: 'Team Timesheet', icon: <ClipboardList size={18} />, section: 'Team' },
     { id: 'org-chart', label: 'Organisation Chart', icon: <Network size={18} />, section: 'Company' },
@@ -37,12 +35,10 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   ],
   management: [
     { id: 'mgmt-portal', label: 'Executive Overview', icon: <LayoutDashboard size={18} />, section: 'Overview' },
-    { id: 'team-leads', label: 'Leads', icon: <Home size={18} />, section: 'Overview' },
     { id: 'leave', label: 'HR Leave Requests', icon: <ClipboardCheck size={18} />, section: 'Approvals' },
     { id: 'directory', label: 'Employee Directory', icon: <FolderOpen size={18} />, section: 'People' },
     { id: 'org-chart', label: 'Organisation Chart', icon: <Network size={18} />, section: 'People' },
     { id: 'attendance-hr', label: 'Attendance', icon: <Calendar size={18} />, section: 'People' },
-    { id: 'team-timesheet', label: 'Team Timesheet', icon: <ClipboardList size={18} />, section: 'People' },
   ],
   finance: [
     { id: 'finance-portal', label: 'Finance Overview', icon: <LayoutDashboard size={18} />, section: 'Overview' },

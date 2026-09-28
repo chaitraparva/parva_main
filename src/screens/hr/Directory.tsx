@@ -11,6 +11,42 @@ function formatEmpId(id: string) {
   return n ? `EMP-${n.padStart(3, '0')}` : id.toUpperCase()
 }
 
+// The directory starts from Neelesh (group head) and works down the
+// reporting chain — his direct reports, then theirs, and so on — instead of
+// A-Z, per Deeksha's request.
+const ROOT_EMPLOYEE_ID = 'DF230001' // Neelesh H P
+
+function sortByHierarchy(all: Employee[], visible: Employee[]): Employee[] {
+  const visibleIds = new Set(visible.map(e => e.id))
+  const byManager = new Map<string, Employee[]>()
+  for (const e of all) {
+    const key = e.managerId || ''
+    if (!byManager.has(key)) byManager.set(key, [])
+    byManager.get(key)!.push(e)
+  }
+  for (const group of byManager.values()) group.sort((a, b) => a.name.localeCompare(b.name))
+
+  const ordered: Employee[] = []
+  const visited = new Set<string>()
+
+  function visit(id: string) {
+    if (visited.has(id)) return
+    visited.add(id)
+    const emp = all.find(e => e.id === id)
+    if (emp && visibleIds.has(id)) ordered.push(emp)
+    for (const child of byManager.get(id) || []) visit(child.id)
+  }
+
+  const root = all.find(e => e.id === ROOT_EMPLOYEE_ID)
+  if (root) visit(root.id)
+
+  // Anyone not reachable from the root (a broken/missing managerId chain, or
+  // the root itself got filtered out of this search) stays visible rather
+  // than silently dropped — grouped after the hierarchy, A-Z.
+  const remaining = visible.filter(e => !visited.has(e.id)).sort((a, b) => a.name.localeCompare(b.name))
+  return [...ordered, ...remaining]
+}
+
 interface Props {
   employees: Employee[]
   currentEmployeeId?: string
@@ -34,6 +70,7 @@ export default function Directory({ employees, currentEmployeeId, onEmployeesUpd
   })
 
   const selectedEmp = employees.find((e) => e.id === selected)
+  const sorted = sortByHierarchy(employees, filtered)
 
   const reportingManagerName = (emp: typeof employees[number]) =>
     emp.managerId ? (employees.find(e => e.id === emp.managerId)?.name || '—') : ''
@@ -87,7 +124,7 @@ export default function Directory({ employees, currentEmployeeId, onEmployeesUpd
               </tr>
             </thead>
             <tbody>
-              {filtered.map((emp, i) => (
+              {sorted.map((emp, i) => (
                 <tr
                   key={emp.id}
                   onClick={() => setSelected(emp.id === selected ? null : emp.id)}

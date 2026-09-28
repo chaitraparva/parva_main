@@ -49,6 +49,14 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
     const end = new Date(form.endDate)
     const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
     const emp = employees.find(e => e.name === form.employeeName)
+    // Who this leave belongs to (and who has to act on it) is the target
+    // employee's actual job title, not the fact that HR is the one filling
+    // in the form on their behalf: an agent's leave always goes to HR, a
+    // manager's always goes to management (the CEO), and so does anyone
+    // else's (admin/hr/finance) — matching how CRM/manager self-service
+    // submissions are routed in MyPortal.tsx/ManagerPortal.tsx.
+    const submittedByRole = emp?.role === 'agent' ? 'crm' : emp?.role === 'manager' ? 'manager' : 'hr'
+    const pendingWith = emp?.role === 'agent' ? 'hr' : 'management'
     const newLeave: LeaveRequest = {
       id: `lr-${Date.now()}`,
       employeeId: emp?.id || 'emp-x',
@@ -61,8 +69,8 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
       reason: form.reason,
       status: 'pending',
       appliedOn: new Date().toISOString().split('T')[0],
-      submittedByRole: 'hr',
-      pendingWith: 'management',
+      submittedByRole,
+      pendingWith,
     }
     onLeaveUpdate([newLeave, ...leaves])
     setShowApplyForm(false)
@@ -71,14 +79,13 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
     setFilterStatus('pending')
   }
 
-  // HR sees leaves submitted by managers or employees (crm); management sees
-  // everything, company-wide — the CEO is the top of the chain, and a
-  // request can otherwise get stuck with no one able to act on it (e.g. a
-  // CRM employee's leave routes to whoever holds the "manager" login role;
-  // if no one does, it would never surface anywhere without this).
+  // HR only acts on agent (CRM) leave — it's never shown to the CEO for
+  // approval, only reflected as an absence (see MgmtPortal.tsx's Absent
+  // Today widget). Management only acts on leave belonging to a manager or
+  // to HR itself — the two tiers report straight to the CEO.
   const visibleLeaves = role === 'management'
-    ? leaves
-    : leaves.filter(l => l.submittedByRole === 'manager' || l.pendingWith === 'hr' || l.submittedByRole === 'crm')
+    ? leaves.filter(l => l.submittedByRole === 'manager' || l.submittedByRole === 'hr')
+    : leaves.filter(l => l.submittedByRole === 'crm')
 
   const filtered = visibleLeaves.filter(l => filterStatus === 'all' || l.status === filterStatus)
 

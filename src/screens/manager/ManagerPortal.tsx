@@ -43,25 +43,22 @@ interface Props {
   employeeId: string
   employees: Employee[]
   attendance: AttendanceRecord[]
+  onAttendanceUpdate: (next: AttendanceRecord[]) => void
   payroll: PayrollRecord[]
   onPayrollUpdate: (next: PayrollRecord[]) => void
 }
 
-export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate, employeeId, employees, attendance: attendanceRecords, payroll: payrollProp, onPayrollUpdate }: Props) {
+export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate, employeeId, employees, attendance: attendanceRecords, onAttendanceUpdate, payroll: payrollProp, onPayrollUpdate }: Props) {
   const [tab, setTab] = useState<Tab>('team-leave')
 
   // People who report directly to whoever is signed in.
   const teamIds = employees.filter(e => e.managerId === employeeId).map(e => e.id)
 
-  // Team leave
-  const pendingTeamLeaves = leaves.filter(l => l.pendingWith === 'manager' && l.submittedByRole === 'crm')
-  const historyTeamLeaves = leaves.filter(l => l.pendingWith === 'done' && l.submittedByRole === 'crm')
-
-  function handleTeamLeave(id: string, action: 'approved' | 'rejected') {
-    onLeaveUpdate(leaves.map(l =>
-      l.id === id ? { ...l, status: action, pendingWith: 'done' } : l
-    ))
-  }
+  // Team leave — view-only. A CRM employee's leave now goes straight to HR
+  // for approval/rejection (see MyPortal.tsx submitLeave), so a manager no
+  // longer approves it here; this tab just shows where each request stands.
+  const pendingTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.status === 'pending')
+  const historyTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.status !== 'pending')
 
   // My leave
   const myLeaves = leaves.filter(l => l.employeeId === employeeId)
@@ -90,7 +87,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
       status: 'pending',
       appliedOn: new Date().toISOString().slice(0, 10),
       submittedByRole: 'manager',
-      pendingWith: 'hr',
+      pendingWith: 'management',
     }
     onLeaveUpdate([...leaves, newLeave])
     setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
@@ -111,23 +108,43 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
     halfDay: filteredAttendance.filter(r => r.status === 'half-day').length,
   }
 
-  // Team expenses — reads from the shared expenses store so claims an
-  // employee just submitted show up here immediately, and any decision
-  // made here is visible to HR too.
+  // Self-service attendance — until biometric attendance is wired up, a
+  // manager marks their own day manually too, same as CRM (see MyPortal.tsx)
+  // and same create-or-update-today's-row pattern as AttendanceHR.tsx.
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const myTodayAttendance = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
+  const [selfAttForm, setSelfAttForm] = useState(() => {
+    const existing = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
+    return existing
+      ? { checkIn: existing.checkIn, checkOut: existing.checkOut, status: existing.status }
+      : { checkIn: '09:00', checkOut: '18:00', status: 'present' as AttendanceRecord['status'] }
+  })
+  const [selfAttFlash, setSelfAttFlash] = useState(false)
+
+  function markMyAttendance() {
+    const existing = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
+    if (existing) {
+      onAttendanceUpdate(attendanceRecords.map(r => r.id === existing.id ? { ...r, ...selfAttForm } : r))
+    } else {
+      const newRec: AttendanceRecord = {
+        id: `att-${Date.now()}`,
+        employeeId,
+        employeeName: meName,
+        date: todayIso,
+        ...selfAttForm,
+      }
+      onAttendanceUpdate([...attendanceRecords, newRec])
+    }
+    setSelfAttFlash(true)
+    setTimeout(() => setSelfAttFlash(false), 3000)
+  }
+
+  // Team expenses — read-only here. A manager can see their team's claims
+  // and status, but approval is HR's call (at month end) and reimbursement
+  // is finance's, so this screen no longer lets a manager approve/reject.
   const teamExpenses = expenses.filter(e => teamIds.includes(e.employeeId))
   const [expenseFilter, setExpenseFilter] = useState('all')
-  const [expenseNotes, setExpenseNotes] = useState<Record<string, string>>({})
   const [collapsedExpenseEmp, setCollapsedExpenseEmp] = useState<Set<string>>(new Set())
-
-  function handleExpense(id: string, action: 'Approved' | 'Rejected') {
-    // approvedBy must be the approver's real employee id, not their display
-    // name — the database column is a foreign key into employees(id), so a
-    // name string here would fail to save (approved_by REFERENCES
-    // employees(id) in schema.sql).
-    onExpensesUpdate(expenses.map(e =>
-      e.id === id ? { ...e, status: action, approvedBy: action === 'Approved' ? employeeId : undefined, note: action === 'Rejected' ? (expenseNotes[id] || '') : e.note } : e
-    ))
-  }
 
   function toggleExpenseEmp(employeeId: string) {
     setCollapsedExpenseEmp(prev => {
@@ -216,7 +233,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
       {tab === 'team-leave' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Pending Approvals</h2>
+            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Pending — Awaiting HR</h2>
             {pendingTeamLeaves.length === 0 ? (
               <p className="text-sm text-muted-foreground">No pending leave requests.</p>
             ) : (
@@ -237,21 +254,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
                       <div><span className="font-medium text-foreground">{l.days} days</span><br />Duration</div>
                     </div>
                     <p className="text-sm mt-2 text-muted-foreground italic">"{l.reason}"</p>
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        onClick={() => handleTeamLeave(l.id, 'approved')}
-                        className="px-4 py-1.5 rounded-lg text-sm font-medium text-white"
-                        style={{ background: navy }}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handleTeamLeave(l.id, 'rejected')}
-                        className="px-4 py-1.5 rounded-lg text-sm font-medium bg-red-50 text-red-600"
-                      >
-                        Reject
-                      </button>
-                    </div>
+                    <p className="text-xs text-muted-foreground mt-3">Awaiting HR's decision — visible here for your reference only.</p>
                   </div>
                 ))}
               </div>
@@ -295,7 +298,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
         <div className="space-y-4">
           {leaveFlash && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
-              Submitted — pending HR approval.
+              Submitted — pending management approval.
             </div>
           )}
           {myBalance && (
@@ -387,6 +390,50 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
       {/* TEAM ATTENDANCE */}
       {tab === 'team-attendance' && (
         <div className="space-y-4">
+          {selfAttFlash && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
+              Today's attendance saved.
+            </div>
+          )}
+          <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+            <h2 className="font-semibold text-base mb-1" style={{ color: navy }}>Mark My Attendance</h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              {myTodayAttendance ? `Already marked for today (${todayIso}) — update it below if needed.` : `Not yet marked for today (${todayIso}).`}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Status</label>
+                <select
+                  value={selfAttForm.status}
+                  onChange={e => setSelfAttForm(p => ({ ...p, status: e.target.value as AttendanceRecord['status'] }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none"
+                >
+                  <option value="present">Present</option>
+                  <option value="late">Late</option>
+                  <option value="half-day">Half Day</option>
+                  <option value="absent">Absent</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Check In</label>
+                <input type="time" value={selfAttForm.checkIn} onChange={e => setSelfAttForm(p => ({ ...p, checkIn: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Check Out</label>
+                <input type="time" value={selfAttForm.checkOut} onChange={e => setSelfAttForm(p => ({ ...p, checkOut: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
+              </div>
+              <div className="flex items-end">
+                <button onClick={markMyAttendance}
+                  className="w-full px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90"
+                  style={{ background: navy }}>
+                  {myTodayAttendance ? 'Update' : 'Mark Attendance'}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { label: 'Present', count: kpiCounts.present, color: '#059669', bg: '#ECFDF5' },
@@ -512,7 +559,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
                             <th className="px-5 py-2.5 font-medium">Amount</th>
                             <th className="px-5 py-2.5 font-medium">Receipt</th>
                             <th className="px-5 py-2.5 font-medium">Status</th>
-                            <th className="px-5 py-2.5 font-medium">Actions</th>
+                            <th className="px-5 py-2.5 font-medium">Approver</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -533,17 +580,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
                               <td className="px-5 py-3"><StatusBadge status={e.status} /></td>
                               <td className="px-5 py-3">
                                 {e.status === 'Pending' ? (
-                                  <div className="flex gap-1.5 items-center">
-                                    <input
-                                      type="text"
-                                      placeholder="Note (optional)"
-                                      value={expenseNotes[e.id] || ''}
-                                      onChange={ev => setExpenseNotes(prev => ({ ...prev, [e.id]: ev.target.value }))}
-                                      className="border border-border rounded px-2 py-1 text-xs bg-white focus:outline-none w-24"
-                                    />
-                                    <button onClick={() => handleExpense(e.id, 'Approved')} className="px-2.5 py-1 rounded text-xs font-medium text-white" style={{ background: navy }}>Approve</button>
-                                    <button onClick={() => handleExpense(e.id, 'Rejected')} className="px-2.5 py-1 rounded text-xs font-medium bg-red-50 text-red-600">Reject</button>
-                                  </div>
+                                  <span className="text-xs text-muted-foreground">Awaiting HR (month end)</span>
                                 ) : (
                                   <span className="text-xs text-muted-foreground">{(e.approvedBy && (employees.find(emp => emp.id === e.approvedBy)?.name || e.approvedBy)) || e.note || '—'}</span>
                                 )}

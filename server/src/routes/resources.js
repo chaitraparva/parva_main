@@ -12,11 +12,14 @@ export const leaveRequestsRouter = crudRouter({
     'employeeId', 'type', 'startDate', 'endDate', 'days', 'reason',
     'status', 'submittedByRole', 'pendingWith', 'decidedBy', 'decidedAt',
   ],
-  // Anyone can submit their own leave request (POST); only a manager/HR/
-  // management can move it to approved/rejected (PATCH) — without this, any
+  // Anyone can submit their own leave request (POST); only HR or management
+  // can move it to approved/rejected (PATCH) — a manager no longer approves
+  // leave directly (see Leave.tsx/MgmtPortal.tsx/ManagerPortal.tsx: CRM leave
+  // goes straight to HR, a manager's own leave goes to management, and a
+  // manager's "Team Leave" tab is read-only). Without this restriction, any
   // signed-in employee could approve their own leave request by calling the
   // API directly, since no screen ever lets an employee PATCH their own row.
-  updateRoles: ['manager', 'hr', 'management'],
+  updateRoles: ['hr', 'management'],
 })
 
 export const payrollRecordsRouter = crudRouter({
@@ -32,9 +35,10 @@ export const payrollRecordsRouter = crudRouter({
 export const attendanceRouter = crudRouter({
   table: 'attendance_records',
   allowedColumns: ['employeeId', 'date', 'checkIn', 'checkOut', 'status'],
-  // Only HR/manager/management ever mark attendance (see AttendanceHR.tsx —
-  // no employee-facing screen creates or edits their own attendance row).
-  writeRoles: ['manager', 'hr', 'management'],
+  // Open to any signed-in employee — until biometric attendance is wired up,
+  // everyone (CRM, manager, HR, management) marks their own attendance for
+  // today from their own portal (see MyPortal.tsx/ManagerPortal.tsx), same
+  // as HR/management can still mark it for anyone from AttendanceHR.tsx.
 })
 
 export const timesheetEntriesRouter = crudRouter({
@@ -55,12 +59,14 @@ export const expenseClaimsRouter = crudRouter({
     'employeeId', 'date', 'description', 'category', 'amount',
     'receiptS3Key', 'receiptFilename', 'status', 'approvedBy', 'reimbursedOn', 'note',
   ],
-  // Anyone can submit their own expense claim (POST); only a manager (for
-  // their own team, in ManagerPortal), HR, management or finance can
-  // approve, reject or reimburse one (PATCH) — without this, any signed-in
-  // employee could approve their own claim by calling the API directly,
-  // regardless of what the UI shows them.
-  updateRoles: ['manager', 'hr', 'management', 'finance'],
+  // Anyone can submit their own expense claim, any day (POST). Only HR can
+  // approve/reject it (at month end, in ExpenseHR.tsx) and only finance can
+  // then mark an approved claim reimbursed (in FinancePortal.tsx) — a
+  // manager no longer approves or reimburses claims (Team Expenses in
+  // ManagerPortal.tsx is read-only) and neither does management/CEO.
+  // Without this restriction, any signed-in employee could approve their own
+  // claim by calling the API directly, regardless of what the UI shows them.
+  updateRoles: ['hr', 'finance'],
 })
 
 export const ticketsRouter = crudRouter({
@@ -135,20 +141,9 @@ export const notificationsRouter = crudRouter({
   allowedColumns: ['employeeId', 'type', 'title', 'message', 'read', 'priority'],
 })
 
-export const leadsRouter = crudRouter({
-  table: 'leads',
-  // leads.id is a client-supplied TEXT primary key (like job_requisitions
-  // above, not a BIGSERIAL) — 'id' has to be an allowed column or every
-  // create would fail a NOT NULL constraint on it.
-  allowedColumns: [
-    'id', 'name', 'phone', 'email', 'source', 'status', 'assignedTo', 'agentName',
-    'budget', 'propertyType', 'location', 'followUpDate', 'notes', 'lastActivity',
-  ],
-})
-
 // onboarding_candidates.id is a client-supplied TEXT primary key
 // (OnboardingHR.tsx generates it as `ob-${Date.now()}`, same as job
-// requisitions/leads above). checklistDone/docItems are small JSONB columns
+// requisitions above). checklistDone/docItems are small JSONB columns
 // holding the fixed-shape onboarding checklist and required-document
 // checkboxes (see CHECKLIST/REQUIRED_DOCS in OnboardingHR.tsx) — same
 // pattern as exit_records.clearanceChecklist, not a separate table, since

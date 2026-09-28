@@ -11,7 +11,6 @@ import employeesRouter from './routes/employees.js'
 import documentsRouter from './routes/documents.js'
 import expenseReceiptsRouter from './routes/expense-receipts.js'
 import ticketCommentsRouter from './routes/ticket-comments.js'
-import leadActivitiesRouter from './routes/lead-activities.js'
 import {
   leaveRequestsRouter,
   payrollRecordsRouter,
@@ -26,7 +25,6 @@ import {
   performanceReviewsRouter,
   flagsRouter,
   notificationsRouter,
-  leadsRouter,
   onboardingCandidatesRouter,
 } from './routes/resources.js'
 
@@ -76,8 +74,6 @@ app.use('/api/performance-goals', performanceGoalsRouter)
 app.use('/api/performance-reviews', performanceReviewsRouter)
 app.use('/api/flags', flagsRouter)
 app.use('/api/notifications', notificationsRouter)
-app.use('/api/leads', leadsRouter)
-app.use('/api/lead-activities', leadActivitiesRouter)
 app.use('/api/onboarding-candidates', onboardingCandidatesRouter)
 
 // Centralized error handler — keeps stack traces out of API responses.

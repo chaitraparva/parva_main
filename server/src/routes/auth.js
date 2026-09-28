@@ -86,6 +86,45 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   res.json({ employee: toCamel(employee), loginRole: req.auth.loginRole })
 }))
 
+// ─────────────────────── Change password (signed in) ───────────────────────
+// For someone already signed in who just wants to change their own
+// password from Settings — distinct from the forgot-password/set-password
+// flow above, which is for someone who's locked out and proves identity via
+// an emailed link instead. This one proves identity with the current
+// password, the same way any "change password" form does.
+const changePasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
+})
+
+router.post('/change-password', requireAuth, changePasswordLimiter, asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {}
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Enter your current password and a new password.' })
+  }
+  if (String(newPassword).length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters.' })
+  }
+
+  const { rows } = await pool.query('SELECT id, password_hash FROM employees WHERE id = $1', [req.auth.employeeId])
+  const employee = rows[0]
+  if (!employee) return res.status(404).json({ error: 'Account not found.' })
+
+  const ok = await verifyPassword(currentPassword, employee.password_hash)
+  if (!ok) {
+    return res.status(401).json({ error: 'Current password is incorrect.' })
+  }
+
+  const passwordHash = await hashPassword(String(newPassword))
+  await pool.query(`UPDATE employees SET password_hash = $1, updated_at = now() WHERE id = $2`, [passwordHash, employee.id])
+
+  res.json({ success: true })
+}))
+
 // ─────────────────────── Forgot password ───────────────────────
 // Sent through Supabase's own mailer (auth.resetPasswordForEmail) instead
 // of a custom emailer — Supabase only sends the email if that address has

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { LeaveRequest, PayrollRecord, Employee, EmployeeTicket, ExitRecord } from '../../types'
+import type { LeaveRequest, PayrollRecord, Employee, EmployeeTicket, ExitRecord, AttendanceRecord } from '../../types'
 
 const navy = '#1C2B4A'
 
@@ -37,20 +37,20 @@ interface Props {
   payroll: PayrollRecord[]
   tickets: EmployeeTicket[]
   exits: ExitRecord[]
+  attendance: AttendanceRecord[]
   currentEmployee?: Employee
 }
 
-export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: payrollProp, tickets: employeeTickets, exits: exitRecords, currentEmployee }: Props) {
+export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: payrollProp, tickets: employeeTickets, exits: exitRecords, attendance, currentEmployee }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
 
-  // Leave approvals — management sees and can act on every pending leave
-  // company-wide (not just ones HR applied on someone's behalf), since the
-  // CEO/management tier is the top of the chain and a request can otherwise
-  // get stuck with no one to approve it (e.g. a CRM employee's leave routes
-  // to whoever holds the "manager" login role — if nobody does, it would
-  // never surface anywhere without this).
-  const pendingLeaves = leaves.filter(l => l.status === 'pending')
-  const historyLeaves = leaves.filter(l => l.status !== 'pending')
+  // Leave approvals — management only sees and acts on leave belonging to a
+  // manager or to HR itself; a CRM/agent employee's leave is HR's call
+  // alone (see Leave.tsx) and never shows up here for approve/reject — it
+  // only shows up below as part of "Absent Today".
+  const mgmtLeaves = leaves.filter(l => l.submittedByRole === 'manager' || l.submittedByRole === 'hr')
+  const pendingLeaves = mgmtLeaves.filter(l => l.status === 'pending')
+  const historyLeaves = mgmtLeaves.filter(l => l.status !== 'pending')
   const [confirmId, setConfirmId] = useState<{ id: string; action: 'approved' | 'rejected' } | null>(null)
 
   function handleLeave(id: string, action: 'approved' | 'rejected') {
@@ -58,12 +58,22 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
     setConfirmId(null)
   }
 
+  // Absent Today — every employee currently on approved leave (of any
+  // tier, including CRM's) or marked absent in today's attendance. This is
+  // how a CRM employee's leave is reflected to the CEO: as an absence, not
+  // as something to approve.
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const absentTodayIds = new Set([
+    ...leaves.filter(l => l.status === 'approved' && l.startDate <= todayStr && l.endDate >= todayStr).map(l => l.employeeId),
+    ...attendance.filter(a => a.date === todayStr && a.status === 'absent').map(a => a.employeeId),
+  ])
+  const absentToday = employees.filter(e => absentTodayIds.has(e.id))
+
   // Overview stats
   const totalEmployees = employees.length
   const totalMonthlyPayroll = payrollProp.reduce((s, r) => s + r.netPay, 0)
-  const pendingCRM = leaves.filter(l => l.pendingWith === 'manager').length
-  const pendingHR = leaves.filter(l => l.pendingWith === 'hr').length
-  const pendingMgmt = leaves.filter(l => l.pendingWith === 'management').length
+  const pendingManagerTier = mgmtLeaves.filter(l => l.pendingWith === 'management' && l.submittedByRole === 'manager').length
+  const pendingHRTier = mgmtLeaves.filter(l => l.pendingWith === 'management' && l.submittedByRole === 'hr').length
   const openTickets = employeeTickets.filter(t => t.status === 'Open' || t.status === 'In Progress' || t.status === 'Pending Info').length
   const activeExits = exitRecords.filter(e => e.status !== 'Completed').length
 
@@ -117,24 +127,52 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
               <p className="text-3xl font-bold font-serif" style={{ color: activeExits > 0 ? '#DC2626' : '#059669' }}>{activeExits}</p>
               <p className="text-xs text-muted-foreground mt-1">In progress</p>
             </div>
-            <div className="bg-card rounded-xl border border-border shadow-sm p-5 col-span-2">
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-3">Pending Leave Requests by Tier</p>
+            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-3">Pending Your Approval</p>
               <div className="flex gap-6">
                 <div>
-                  <p className="text-xl font-bold" style={{ color: '#D97706' }}>{pendingCRM}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">CRM → Manager</p>
+                  <p className="text-xl font-bold" style={{ color: '#D97706' }}>{pendingManagerTier}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Line Manager</p>
                 </div>
                 <div>
-                  <p className="text-xl font-bold" style={{ color: '#2563EB' }}>{pendingHR}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Manager → HR</p>
-                </div>
-                <div>
-                  <p className="text-xl font-bold" style={{ color: '#7C3AED' }}>{pendingMgmt}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">HR → Management</p>
+                  <p className="text-xl font-bold" style={{ color: '#2563EB' }}>{pendingHRTier}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">HR</p>
                 </div>
               </div>
             </div>
+            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Absent Today</p>
+              <p className="text-3xl font-bold font-serif" style={{ color: absentToday.length > 0 ? '#D97706' : '#059669' }}>{absentToday.length}</p>
+              <p className="text-xs text-muted-foreground mt-1">On approved leave or marked absent</p>
+            </div>
           </div>
+
+          {/* Absent Today */}
+          {absentToday.length > 0 && (
+            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+              <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Absent Today</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[420px]">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                      <th className="pb-2 font-medium">Employee</th>
+                      <th className="pb-2 font-medium">Role</th>
+                      <th className="pb-2 font-medium">Department</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {absentToday.map(e => (
+                      <tr key={e.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                        <td className="py-2.5 font-medium" style={{ color: navy }}>{e.name}</td>
+                        <td className="py-2.5 capitalize">{e.role}</td>
+                        <td className="py-2.5">{e.department}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Employee List */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">

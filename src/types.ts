@@ -1,34 +1,4 @@
 export type Role = 'crm' | 'manager' | 'hr' | 'management' | 'finance'
-export type LeadSource = 'Housing.com' | 'Social Media' | 'Referral' | 'Walk-in'
-export type LeadStatus = 'New' | 'Contacted' | 'Qualified' | 'Site Visit' | 'Closed'
-export type ActivityType = 'call' | 'email' | 'note' | 'site-visit' | 'whatsapp'
-
-export interface Activity {
-  id: string
-  type: ActivityType
-  description: string
-  timestamp: string
-  by: string
-}
-
-export interface Lead {
-  id: string
-  name: string
-  phone: string
-  email: string
-  source: LeadSource
-  status: LeadStatus
-  assignedTo: string
-  agentName: string
-  budget: string
-  propertyType: 'Apartment' | 'Villa' | 'Plot'
-  location: string
-  createdAt: string
-  lastActivity: string
-  activities: Activity[]
-  followUpDate?: string
-  notes?: string
-}
 
 export type JobTitle = 'agent' | 'manager' | 'admin' | 'hr' | 'finance'
 
