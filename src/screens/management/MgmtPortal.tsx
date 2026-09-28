@@ -166,7 +166,7 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
                     {absentToday.map(e => (
                       <tr key={e.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                         <td className="py-2.5 font-medium" style={{ color: navy }}>{e.name}</td>
-                        <td className="py-2.5 capitalize">{e.role}</td>
+                        <td className="py-2.5 capitalize">{e.title || e.role}</td>
                         <td className="py-2.5">{e.department}</td>
                       </tr>
                     ))}
@@ -194,7 +194,7 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
                   {sortedEmployees.map(e => (
                     <tr key={e.id} className="border-b border-border hover:bg-muted/20">
                       <td className="py-2.5 font-medium" style={{ color: navy }}>{e.name}</td>
-                      <td className="py-2.5 capitalize">{e.role}</td>
+                      <td className="py-2.5 capitalize">{e.title || e.role}</td>
                       <td className="py-2.5">{e.department}</td>
                       <td className="py-2.5">{e.team}</td>
                       <td className="py-2.5">
