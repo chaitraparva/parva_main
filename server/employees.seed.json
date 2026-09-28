@@ -168,7 +168,7 @@
     "role": "agent",
     "title": "Operations Manager",
     "email": "mohsin@diagofinance.com",
-    "phone": "",
+    "phone": "971507104563",
     "team": "",
     "department": "Operations",
     "managerId": "DF230002",
@@ -238,7 +238,7 @@
     "id": "DF230037",
     "name": "Vishwas V",
     "role": "agent",
-    "title": "Team Lead",
+    "title": "Investor Relation Customer Growth Manager",
     "email": "vishwass@diagofinance.com",
     "phone": "7411282661",
     "team": "",
@@ -300,8 +300,8 @@
     "managerId": "DF230044",
     "joinDate": "",
     "status": "active",
-    "location": "",
-    "company": "",
+    "location": "Bangalore",
+    "company": "Diago Academy",
     "loginRoles": [
       "hr"
     ]
@@ -316,7 +316,7 @@
     "team": "",
     "department": "Administration",
     "managerId": "DF230044",
-    "joinDate": "",
+    "joinDate": "2023-11-21",
     "status": "active",
     "location": "Bangalore",
     "company": "Diago Academy",
@@ -347,12 +347,12 @@
     "name": "Subhash H N",
     "role": "agent",
     "title": "Sales Associate",
-    "email": "subhash@diagofinance.com",
+    "email": "subash@diagofinance.com",
     "phone": "6360382875",
     "team": "",
     "department": "CRM",
     "managerId": "DF230044",
-    "joinDate": "",
+    "joinDate": "2026-06-16",
     "status": "active",
     "location": "Bangalore",
     "company": "Diago Academy",
@@ -370,10 +370,10 @@
     "team": "",
     "department": "CRM",
     "managerId": "DF230044",
-    "joinDate": "",
+    "joinDate": "2026-03-22",
     "status": "active",
-    "location": "",
-    "company": "",
+    "location": "Bangalore",
+    "company": "Diago Academy",
     "loginRoles": [
       "crm"
     ]
@@ -400,16 +400,16 @@
     "id": "DF230042",
     "name": "Meghashree",
     "role": "agent",
-    "title": "",
-    "email": "",
-    "phone": "",
+    "title": "Currently in Training",
+    "email": "meghashree@diagofinance.com",
+    "phone": "9741023636",
     "team": "",
-    "department": "",
-    "managerId": "DF230008",
-    "joinDate": "",
+    "department": "Sales",
+    "managerId": "DF230044",
+    "joinDate": "2026-08-01",
     "status": "active",
-    "location": "",
-    "company": "",
+    "location": "Bangalore",
+    "company": "Diago Academy",
     "loginRoles": [
       "crm"
     ]
@@ -422,12 +422,12 @@
     "email": "rabia@diagofinance.com",
     "phone": "7988817107",
     "team": "",
-    "department": "CSM",
+    "department": "CRM",
     "managerId": "DF230008",
     "joinDate": "",
     "status": "active",
-    "location": "",
-    "company": "",
+    "location": "Dehradun",
+    "company": "Diago Academy",
     "loginRoles": [
       "crm"
     ]
@@ -512,8 +512,8 @@
     "email": "vishal@diagofinance.com",
     "phone": "8057743548",
     "team": "",
-    "department": "CSM",
-    "managerId": "DF230008",
+    "department": "CRM",
+    "managerId": "DF230007",
     "joinDate": "2026-04-06",
     "status": "active",
     "location": "Dehradun",
@@ -535,7 +535,7 @@
     "joinDate": "2026-09-01",
     "status": "active",
     "location": "Bangalore",
-    "company": "Parva realty",
+    "company": "Parva Realty",
     "loginRoles": [
       "crm"
     ]
@@ -553,7 +553,7 @@
     "joinDate": "2026-05-04",
     "status": "active",
     "location": "Bangalore",
-    "company": "Parva realty",
+    "company": "Parva Realty",
     "loginRoles": [
       "crm"
     ]
@@ -571,7 +571,7 @@
     "joinDate": "2026-05-04",
     "status": "active",
     "location": "Bangalore",
-    "company": "Parva realty",
+    "company": "Parva Realty",
     "loginRoles": [
       "crm"
     ]
@@ -582,14 +582,14 @@
     "role": "agent",
     "title": "Property Consultant",
     "email": "ajoy@parvarealty.ae",
-    "phone": "",
+    "phone": "971551013421",
     "team": "",
     "department": "Sales",
     "managerId": "PA230046",
-    "joinDate": "",
+    "joinDate": "2024-11-01",
     "status": "active",
     "location": "Dubai",
-    "company": "Parva realty",
+    "company": "Parva Realty",
     "loginRoles": [
       "crm"
     ]
@@ -600,14 +600,14 @@
     "role": "agent",
     "title": "Alliance Manager",
     "email": "ankita@parvarealty.ae",
-    "phone": "",
+    "phone": "971564227855",
     "team": "",
     "department": "Sales",
     "managerId": "PA230046",
-    "joinDate": "",
+    "joinDate": "2025-02-03",
     "status": "active",
     "location": "Dubai",
-    "company": "Parva realty",
+    "company": "Parva Realty",
     "loginRoles": [
       "crm"
     ]
@@ -625,7 +625,7 @@
     "joinDate": "2026-02-23",
     "status": "active",
     "location": "Tumkur",
-    "company": "Diago finance",
+    "company": "Diago Finance",
     "loginRoles": [
       "crm"
     ]

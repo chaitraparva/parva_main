@@ -3,48 +3,13 @@ import { Search, Phone, Mail, IdCard, UserCog, MapPin } from 'lucide-react'
 import type { JobTitle, Employee } from '../../types'
 import DocumentsPanel from '../../components/DocumentsPanel'
 import SalaryStructureEditor from '../../components/SalaryStructureEditor'
+import { sortByRosterOrder } from '../../lib/orgOrder'
 
 const roleLabels: Record<JobTitle, string> = { admin: 'Super Admin', manager: 'Sales Manager', agent: 'CRM Agent', hr: 'HR Manager', finance: 'Finance Manager' }
 
 function formatEmpId(id: string) {
   const n = id.split('-')[1]
   return n ? `EMP-${n.padStart(3, '0')}` : id.toUpperCase()
-}
-
-// The directory starts from Neelesh (group head) and works down the
-// reporting chain — his direct reports, then theirs, and so on — instead of
-// A-Z, per Deeksha's request.
-const ROOT_EMPLOYEE_ID = 'DF230001' // Neelesh H P
-
-function sortByHierarchy(all: Employee[], visible: Employee[]): Employee[] {
-  const visibleIds = new Set(visible.map(e => e.id))
-  const byManager = new Map<string, Employee[]>()
-  for (const e of all) {
-    const key = e.managerId || ''
-    if (!byManager.has(key)) byManager.set(key, [])
-    byManager.get(key)!.push(e)
-  }
-  for (const group of byManager.values()) group.sort((a, b) => a.name.localeCompare(b.name))
-
-  const ordered: Employee[] = []
-  const visited = new Set<string>()
-
-  function visit(id: string) {
-    if (visited.has(id)) return
-    visited.add(id)
-    const emp = all.find(e => e.id === id)
-    if (emp && visibleIds.has(id)) ordered.push(emp)
-    for (const child of byManager.get(id) || []) visit(child.id)
-  }
-
-  const root = all.find(e => e.id === ROOT_EMPLOYEE_ID)
-  if (root) visit(root.id)
-
-  // Anyone not reachable from the root (a broken/missing managerId chain, or
-  // the root itself got filtered out of this search) stays visible rather
-  // than silently dropped — grouped after the hierarchy, A-Z.
-  const remaining = visible.filter(e => !visited.has(e.id)).sort((a, b) => a.name.localeCompare(b.name))
-  return [...ordered, ...remaining]
 }
 
 interface Props {
@@ -70,7 +35,7 @@ export default function Directory({ employees, currentEmployeeId, onEmployeesUpd
   })
 
   const selectedEmp = employees.find((e) => e.id === selected)
-  const sorted = sortByHierarchy(employees, filtered)
+  const sorted = sortByRosterOrder(filtered)
 
   const reportingManagerName = (emp: typeof employees[number]) =>
     emp.managerId ? (employees.find(e => e.id === emp.managerId)?.name || '—') : ''

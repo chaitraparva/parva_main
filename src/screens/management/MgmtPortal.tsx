@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { LeaveRequest, PayrollRecord, Employee, EmployeeTicket, ExitRecord, AttendanceRecord } from '../../types'
+import { sortByRosterOrder } from '../../lib/orgOrder'
 
 const navy = '#1C2B4A'
 
@@ -67,10 +68,11 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
     ...leaves.filter(l => l.status === 'approved' && l.startDate <= todayStr && l.endDate >= todayStr).map(l => l.employeeId),
     ...attendance.filter(a => a.date === todayStr && a.status === 'absent').map(a => a.employeeId),
   ])
-  const absentToday = employees.filter(e => absentTodayIds.has(e.id))
+  const absentToday = sortByRosterOrder(employees.filter(e => absentTodayIds.has(e.id)))
 
   // Overview stats
   const totalEmployees = employees.length
+  const sortedEmployees = sortByRosterOrder(employees)
   const totalMonthlyPayroll = payrollProp.reduce((s, r) => s + r.netPay, 0)
   const pendingManagerTier = mgmtLeaves.filter(l => l.pendingWith === 'management' && l.submittedByRole === 'manager').length
   const pendingHRTier = mgmtLeaves.filter(l => l.pendingWith === 'management' && l.submittedByRole === 'hr').length
@@ -189,7 +191,7 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
                   </tr>
                 </thead>
                 <tbody>
-                  {employees.map(e => (
+                  {sortedEmployees.map(e => (
                     <tr key={e.id} className="border-b border-border hover:bg-muted/20">
                       <td className="py-2.5 font-medium" style={{ color: navy }}>{e.name}</td>
                       <td className="py-2.5 capitalize">{e.role}</td>
