@@ -159,7 +159,7 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
           <h2 className="font-serif text-2xl font-semibold text-foreground">Payroll</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Stage 2 of 3 — HR processes verified records and forwards to Admin</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => { setGenError(''); setShowGenerate(true) }} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all" style={{ backgroundColor: navy }}>
             <Plus size={14} /> Generate Payslip
           </button>

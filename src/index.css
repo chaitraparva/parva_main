@@ -47,7 +47,50 @@ body {
   scrollbar-color: #E5DFD5 transparent;
 }
 
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #E5DFD5; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #C9A96E; }
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #E5DFD5;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #C9A96E;
+}
+
+/* ── Responsive helpers ──────────────────────────────────────────────
+   Wide data tables across the app sit inside a plain `overflow-x-auto`
+   wrapper so they still work on phones/tablets, but nothing told the
+   user there was more to see off-screen. This paints a soft fade + a
+   faint edge on whichever side still has hidden content, using the
+   background-attachment trick (two gradients scroll with the content,
+   two stay pinned to the viewport edges) — no JS needed. */
+.overflow-x-auto {
+  background-image:
+    linear-gradient(to right, var(--color-background, #FAF8F5), rgba(250, 248, 245, 0)),
+    linear-gradient(to left, var(--color-background, #FAF8F5), rgba(250, 248, 245, 0)),
+    linear-gradient(to right, rgba(28, 43, 74, 0.12), rgba(28, 43, 74, 0)),
+    linear-gradient(to left, rgba(28, 43, 74, 0.12), rgba(28, 43, 74, 0));
+  background-repeat: no-repeat;
+  background-size: 28px 100%, 28px 100%, 10px 100%, 10px 100%;
+  background-position: left center, right center, left center, right center;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* Safety net for header/toolbar button rows that assume desktop width:
+   on phones, let a crowded `justify-between`/gap-2 row wrap onto a
+   second line instead of clipping its last item off-screen. */
+@media (max-width: 640px) {
+
+  .flex.items-center.gap-2:has(> button),
+  .flex.items-center.gap-1\.5:has(> button) {
+    flex-wrap: wrap;
+  }
+}

@@ -2,36 +2,38 @@ import { Bell, ChevronDown, Menu } from 'lucide-react'
 import type { Role, Employee } from '../../types'
 
 const screenTitles: Record<string, string> = {
-  'hr-dashboard':    'HR Dashboard',
-  'recruitment':     'Recruitment Management',
-  'performance':     'Performance Management',
-  'directory':       'Employee Directory',
-  'payroll-hr':      'Payroll Processing',
-  'attendance-hr':   'Attendance Tracker',
-  'leave':           'Leave Management',
-  'onboarding-hr':   'Onboarding',
+  'hr-dashboard': 'HR Dashboard',
+  'recruitment': 'Recruitment Management',
+  'performance': 'Performance Management',
+  'directory': 'Employee Directory',
+  'payroll-hr': 'Payroll Processing',
+  'attendance-hr': 'Attendance Tracker',
+  'leave': 'Leave Management',
+  'onboarding-hr': 'Onboarding',
   'exit-management': 'Exit Management',
-  'expense-hr':      'Expense Claims',
-  'tickets-hr':      'Employee Tickets',
-  'notifications':   'Notifications',
-  'settings':        'Settings',
-  'profile':         'My Profile',
-  'my-portal':       'My Portal',
-  'manager-portal':  'Manager Portal',
-  'mgmt-portal':     'Executive Portal',
-  'finance-portal':  'Finance Portal',
-  'org-chart':       'Organisation Chart',
+  'expense-hr': 'Expense Claims',
+  'tickets-hr': 'Employee Tickets',
+  'notifications': 'Notifications',
+  'settings': 'Settings',
+  'profile': 'My Profile',
+  'my-portal': 'My Portal',
+  'my-timesheet': 'My Timesheet',
+  'team-timesheet': 'Team Timesheet',
+  'manager-portal': 'Manager Portal',
+  'mgmt-portal': 'Executive Portal',
+  'finance-portal': 'Finance Portal',
+  'org-chart': 'Organisation Chart',
 }
 
 // Every role now covers more than one real person (or resolves to whoever
 // actually logged in), so these are generic role labels — not any specific
 // person's name — used only in the brief instant before currentEmployee loads.
 const USER_INFO: Record<Role, { name: string; initials: string }> = {
-  crm:        { name: 'CRM Executive',   initials: '?' },
-  manager:    { name: 'Line Manager',    initials: '?' },
-  hr:         { name: 'HR Manager',      initials: '?' },
-  management: { name: 'Management',      initials: '?' },
-  finance:    { name: 'Finance Manager', initials: '?' },
+  crm: { name: 'CRM Executive', initials: '?' },
+  manager: { name: 'Line Manager', initials: '?' },
+  hr: { name: 'HR Manager', initials: '?' },
+  management: { name: 'Management', initials: '?' },
+  finance: { name: 'Finance Manager', initials: '?' },
 }
 
 interface TopBarProps {

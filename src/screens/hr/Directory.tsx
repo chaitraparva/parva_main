@@ -65,8 +65,11 @@ export default function Directory({ employees, currentEmployeeId, onEmployeesUpd
 
         {/* Full data table — every field HR asked for (Employee ID, Department,
             Joined Date, Reporting Manager, contact details, email, location)
-            is visible directly in the row, no click required. */}
-        <div className="overflow-x-auto">
+            is visible directly in the row, no click required. Only shown from
+            xl up: the table needs ~1080px to lay out without clipping a
+            column, so phones/tablets/small laptop windows get the card list
+            below instead. */}
+        <div className="hidden xl:block overflow-x-auto">
           <table className="w-full min-w-[1080px]">
             <thead>
               <tr className="border-b border-border">
@@ -117,10 +120,54 @@ export default function Directory({ employees, currentEmployeeId, onEmployeesUpd
               ))}
             </tbody>
           </table>
-          {filtered.length === 0 && (
-            <p className="p-6 text-sm text-muted-foreground text-center">No employees match this search.</p>
-          )}
         </div>
+
+        {/* Card list — phones, tablets, and narrower desktop windows. Same
+            data as the table, one employee per card, tap to open the same
+            detail panel. */}
+        <div className="xl:hidden divide-y divide-border">
+          {sorted.map((emp) => (
+            <div
+              key={emp.id}
+              onClick={() => setSelected(emp.id === selected ? null : emp.id)}
+              className="cursor-pointer transition-colors p-4"
+              style={{ backgroundColor: selected === emp.id ? 'rgba(201,169,110,0.08)' : undefined }}
+            >
+              <div className="flex items-center gap-3">
+                {emp.photoUrl ? (
+                  <img src={emp.photoUrl} alt={emp.name} className="w-10 h-10 rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-semibold shrink-0" style={{ backgroundColor: 'rgba(28,43,74,0.1)', color: '#1C2B4A' }}>
+                    {emp.name.split(' ').map((n) => n[0]).join('')}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-foreground">{emp.name}</p>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${emp.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                      {emp.status === 'active' ? 'Active' : 'On Leave'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{emp.title || roleLabels[emp.role]}{emp.team ? ` · ${emp.team}` : ''}</p>
+                  {emp.company && <p className="text-[10px] text-muted-foreground/80">{emp.company}</p>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3 pl-[52px] text-xs text-muted-foreground">
+                <div><span className="text-muted-foreground/70">ID </span>{formatEmpId(emp.id)}</div>
+                {emp.department && <div><span className="text-muted-foreground/70">Dept </span>{emp.department}</div>}
+                {emp.joinDate && <div><span className="text-muted-foreground/70">Joined </span>{emp.joinDate}</div>}
+                {emp.managerId && <div className="truncate"><span className="text-muted-foreground/70">Manager </span>{reportingManagerName(emp)}</div>}
+                {emp.phone && <div className="col-span-2 flex items-center gap-1.5"><Phone size={11} className="shrink-0" />{emp.phone}</div>}
+                {emp.email && <div className="col-span-2 flex items-center gap-1.5 truncate"><Mail size={11} className="shrink-0" /><span className="truncate">{emp.email}</span></div>}
+                {emp.location && <div className="col-span-2 flex items-center gap-1.5"><MapPin size={11} className="shrink-0" />{emp.location}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {filtered.length === 0 && (
+          <p className="p-6 text-sm text-muted-foreground text-center">No employees match this search.</p>
+        )}
       </div>
 
       {/* Detail panel — documents & downloads for the selected employee */}
