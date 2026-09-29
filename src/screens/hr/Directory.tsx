@@ -20,18 +20,16 @@ interface Props {
 
 export default function Directory({ employees, currentEmployeeId, onEmployeesUpdate }: Props) {
   const [search, setSearch] = useState('')
-  const [roleFilter, setRoleFilter] = useState<JobTitle | 'all'>('all')
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [selected, setSelected] = useState<string | null>(null)
 
-  const companies = Array.from(new Set(employees.map((e) => e.company))).sort()
+  const companies = Array.from(new Set(employees.map((e) => e.company).filter(Boolean))).sort()
   const viewer = employees.find(e => e.id === currentEmployeeId)
 
   const filtered = employees.filter((e) => {
     const matchSearch = e.name.toLowerCase().includes(search.toLowerCase()) || e.email.includes(search.toLowerCase())
-    const matchRole = roleFilter === 'all' || e.role === roleFilter
     const matchCompany = companyFilter === 'all' || e.company === companyFilter
-    return matchSearch && matchRole && matchCompany
+    return matchSearch && matchCompany
   })
 
   const selectedEmp = employees.find((e) => e.id === selected)
@@ -45,20 +43,9 @@ export default function Directory({ employees, currentEmployeeId, onEmployeesUpd
       {/* List */}
       <div className="flex-1 min-w-0 bg-card rounded-xl border border-border shadow-sm">
         <div className="p-5 border-b border-border">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="relative flex-1">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search employees…" className="w-full pl-9 pr-4 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-accent/30" />
-            </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {(['all', 'agent', 'manager', 'hr', 'admin', 'finance'] as const).map((r) => (
-                <button key={r} onClick={() => setRoleFilter(r)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all capitalize"
-                  style={{ backgroundColor: roleFilter === r ? '#1C2B4A' : '#F5F2EC', color: roleFilter === r ? '#FAF8F5' : '#7A7065' }}>
-                  {r === 'all' ? 'All' : roleLabels[r as JobTitle]}
-                </button>
-              ))}
-            </div>
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search employees…" className="w-full pl-9 pr-4 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-accent/30" />
           </div>
           <div className="flex gap-1.5 flex-wrap mt-3">
             <button onClick={() => setCompanyFilter('all')}
