@@ -10,11 +10,14 @@ import { getSupabaseAdmin } from '../lib/supabase-admin.js'
 
 const router = Router()
 
-// Brute-force protection: 10 attempts per IP per 15 minutes on the login
-// route specifically (separate from any general API rate limit).
+// Brute-force protection: 100 attempts per IP per 15 minutes on the login
+// route specifically (separate from any general API rate limit). Raised
+// from the original 10 — several people share the same office network/IP,
+// and the mass password reset meant a lot of legitimate failed attempts
+// while everyone switched over, tripping the old limit too easily.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many login attempts. Please wait a few minutes and try again.' },
