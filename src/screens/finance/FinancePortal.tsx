@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react'
-import type { PayrollRecord, ExpenseClaim, Employee } from '../../types'
+import type { PayrollRecord, ExpenseClaim, Employee, LeaveRequest } from '../../types'
 import { DollarSign } from 'lucide-react'
+import { computeLeaveBalance, LEAVE_POLICY } from '../../lib/leaveBalance'
 
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
 
-type Tab = 'overview' | 'payroll-signoff' | 'reimbursements'
+const LEAVE_TYPES = ['Sick', 'Casual', 'Earned', 'Unpaid'] as const
+type Tab = 'overview' | 'payroll-signoff' | 'reimbursements' | 'my-leave'
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     disbursed: 'bg-emerald-50 text-emerald-700',
+    pending: 'bg-amber-50 text-amber-700',
+    approved: 'bg-emerald-50 text-emerald-700',
+    rejected: 'bg-red-50 text-red-600',
   }
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${map[status] || 'bg-gray-100 text-gray-600'}`}>
@@ -25,10 +30,50 @@ interface Props {
   onExpensesUpdate: (next: ExpenseClaim[]) => void
   employees: Employee[]
   currentEmployee?: Employee
+  leaves: LeaveRequest[]
+  onLeaveUpdate: (l: LeaveRequest[]) => void
+  employeeId: string
 }
 
-export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, expenses, onExpensesUpdate, employees, currentEmployee }: Props) {
+export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, expenses, onExpensesUpdate, employees, currentEmployee, leaves, onLeaveUpdate, employeeId }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
+
+  // My Leave — a finance employee's own leave request, same self-service
+  // pattern as ManagerPortal.tsx's "My Leave" tab. It goes to HR for
+  // approval (see Leave.tsx), never to management.
+  const myLeaves = leaves.filter(l => l.employeeId === employeeId)
+  const me = currentEmployee || employees.find(e => e.id === employeeId)
+  const meName = me?.name || 'Unknown'
+  const meDepartment = me?.department || ''
+  const myBalance = me ? computeLeaveBalance(me, leaves) : null
+  const [leaveFlash, setLeaveFlash] = useState(false)
+  const [leaveForm, setLeaveForm] = useState({ type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '' })
+
+  function submitMyLeave() {
+    if (!leaveForm.startDate || !leaveForm.endDate || !leaveForm.reason) return
+    const start = new Date(leaveForm.startDate)
+    const end = new Date(leaveForm.endDate)
+    const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+    const newLeave: LeaveRequest = {
+      id: `lv-${Date.now()}`,
+      employeeId,
+      employeeName: meName,
+      department: meDepartment,
+      type: leaveForm.type,
+      startDate: leaveForm.startDate,
+      endDate: leaveForm.endDate,
+      days,
+      reason: leaveForm.reason,
+      status: 'pending',
+      appliedOn: new Date().toISOString().slice(0, 10),
+      submittedByRole: 'finance',
+      pendingWith: 'hr',
+    }
+    onLeaveUpdate([...leaves, newLeave])
+    setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
+    setLeaveFlash(true)
+    setTimeout(() => setLeaveFlash(false), 4000)
+  }
 
   // Payroll sign-off — HR processes a record, then it lands here for
   // Finance to give the final sign-off and mark it disbursed.
@@ -69,6 +114,7 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
     { key: 'overview', label: 'Overview' },
     { key: 'payroll-signoff', label: 'Payroll Sign-off' },
     { key: 'reimbursements', label: 'Reimbursements' },
+    { key: 'my-leave', label: 'My Leave' },
   ]
 
   return (
@@ -318,6 +364,100 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* MY LEAVE */}
+      {tab === 'my-leave' && (
+        <div className="space-y-4">
+          {leaveFlash && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
+              Submitted — pending HR's approval.
+            </div>
+          )}
+          {myBalance && (
+            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+              <h2 className="font-semibold text-base mb-1" style={{ color: navy }}>My Leave Balance</h2>
+              <p className="text-xs text-muted-foreground mb-4">Days remaining by type, out of your annual allocation.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {([['Sick', myBalance.Sick, LEAVE_POLICY.Sick], ['Casual', myBalance.Casual, LEAVE_POLICY.Casual], ['Earned', myBalance.Earned, LEAVE_POLICY.Earned]] as const).map(([label, val, total]) => (
+                  <div key={label} className="rounded-lg p-3.5" style={{ backgroundColor: '#F5F2EC' }}>
+                    <p className="text-xs text-muted-foreground mb-1">{label} Leave</p>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="font-serif text-2xl font-semibold" style={{ color: navy }}>{val}</span>
+                      <span className="text-xs text-muted-foreground">/ {total} days</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-white overflow-hidden mt-2">
+                      <div className="h-full rounded-full" style={{ width: `${(val / total) * 100}%`, backgroundColor: val > total * 0.5 ? '#10B981' : val > 0 ? '#F59E0B' : '#EF4444' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-card rounded-xl border border-border shadow-sm p-5 space-y-4">
+            <h2 className="font-semibold text-base" style={{ color: navy }}>Apply for Leave</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Leave Type</label>
+                <select
+                  value={leaveForm.type}
+                  onChange={e => setLeaveForm(f => ({ ...f, type: e.target.value as typeof LEAVE_TYPES[number] }))}
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none"
+                >
+                  {LEAVE_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Start Date</label>
+                <input type="date" value={leaveForm.startDate} onChange={e => setLeaveForm(f => ({ ...f, startDate: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">End Date</label>
+                <input type="date" value={leaveForm.endDate} onChange={e => setLeaveForm(f => ({ ...f, endDate: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Reason</label>
+                <input type="text" placeholder="Reason for leave" value={leaveForm.reason} onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none" />
+              </div>
+            </div>
+            <button onClick={submitMyLeave} className="px-5 py-2 rounded-lg text-sm font-medium text-white" style={{ background: navy }}>
+              Submit Leave Request
+            </button>
+          </div>
+
+          <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>My Leave History</h2>
+            {myLeaves.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No leave requests.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                      <th className="pb-2 font-medium">Type</th>
+                      <th className="pb-2 font-medium">From</th>
+                      <th className="pb-2 font-medium">To</th>
+                      <th className="pb-2 font-medium">Days</th>
+                      <th className="pb-2 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {myLeaves.map(l => (
+                      <tr key={l.id} className="border-b border-border hover:bg-muted/20">
+                        <td className="py-2.5">{l.type}</td>
+                        <td className="py-2.5">{l.startDate}</td>
+                        <td className="py-2.5">{l.endDate}</td>
+                        <td className="py-2.5">{l.days}</td>
+                        <td className="py-2.5"><StatusBadge status={l.status} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

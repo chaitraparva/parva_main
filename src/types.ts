@@ -95,6 +95,8 @@ export interface LeaveRequest {
   appliedOn: string
   submittedByRole: Role        // which role tier submitted this
   pendingWith: Role | 'done'  // which role tier needs to act ('done' = resolved)
+  decidedBy?: string | null    // employeeId of whoever last approved/rejected this
+  decidedAt?: string | null
 }
 
 export interface Flag {

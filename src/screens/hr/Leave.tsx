@@ -6,7 +6,7 @@ import { computeAllLeaveBalances, computeLeaveBalance, LEAVE_POLICY, NATIONAL_HO
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
 
-type Tab = 'requests' | 'balances' | 'policy'
+type Tab = 'requests' | 'crm-log' | 'balances' | 'policy'
 
 const POLICY = [
   { type: 'Sick Leave', annual: LEAVE_POLICY.Sick, carry: 3, note: 'Medical certificate required for 3+ consecutive days.' },
@@ -52,12 +52,18 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
     // Who this leave belongs to (and who has to act on it) is the target
     // employee's actual job title, not the fact that HR is the one filling
     // in the form on their behalf: an agent's leave goes to their line
-    // manager first (who forwards it to HR for the final call), a
-    // manager's always goes to management (the CEO), and so does anyone
-    // else's (admin/hr/finance) — matching how CRM/manager self-service
-    // submissions are routed in MyPortal.tsx/ManagerPortal.tsx.
-    const submittedByRole = emp?.role === 'agent' ? 'crm' : emp?.role === 'manager' ? 'manager' : 'hr'
-    const pendingWith = emp?.role === 'agent' ? 'manager' : 'management'
+    // manager (whose decision is final — see ManagerPortal.tsx), a
+    // manager's or a finance employee's own leave goes to HR, and HR's own
+    // goes to management (the CEO) — matching how CRM/manager/finance
+    // self-service submissions are routed in
+    // MyPortal.tsx/ManagerPortal.tsx/FinancePortal.tsx.
+    const submittedByRole =
+      emp?.role === 'agent' ? 'crm' :
+        emp?.role === 'manager' ? 'manager' :
+          emp?.role === 'finance' ? 'finance' : 'hr'
+    const pendingWith =
+      emp?.role === 'agent' ? 'manager' :
+        emp?.role === 'manager' || emp?.role === 'finance' ? 'hr' : 'management'
     const newLeave: LeaveRequest = {
       id: `lr-${Date.now()}`,
       employeeId: emp?.id || 'emp-x',
@@ -80,18 +86,25 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
     setFilterStatus('pending')
   }
 
-  // HR acts on agent (CRM) leave only after the employee's line manager has
-  // already approved it (pendingWith moves from 'manager' to 'hr' — see
-  // ManagerPortal.tsx) — a request still sitting with the manager isn't
-  // shown here at all. It's never shown to the CEO for approval either,
-  // only reflected as an absence (see MgmtPortal.tsx's Absent Today
-  // widget). Management only acts on leave belonging to a manager or to HR
-  // itself — the two tiers report straight to the CEO.
+  // A CRM employee's leave is decided entirely by their line manager (see
+  // ManagerPortal.tsx) — HR never acts on it, only sees the outcome
+  // afterwards in the read-only log below. HR's own actionable queue is a
+  // manager's or a finance employee's own leave request, both of which land
+  // with HR directly. Management's queue here is just HR's own leave — a
+  // manager's leave no longer reaches the CEO at all.
   const visibleLeaves = role === 'management'
-    ? leaves.filter(l => l.submittedByRole === 'manager' || l.submittedByRole === 'hr')
-    : leaves.filter(l => l.submittedByRole === 'crm' && l.pendingWith !== 'manager')
+    ? leaves.filter(l => l.submittedByRole === 'hr')
+    : leaves.filter(l => l.submittedByRole === 'manager' || l.submittedByRole === 'finance')
 
   const filtered = visibleLeaves.filter(l => filterStatus === 'all' || l.status === filterStatus)
+
+  // Read-only reference log for HR: every CRM leave request and who decided
+  // it (their line manager), regardless of status. No approve/reject here —
+  // this is visibility only, per the "HR should just see whose application
+  // is approved by whom" requirement.
+  const crmLeaveLog = [...leaves]
+    .filter(l => l.submittedByRole === 'crm')
+    .sort((a, b) => b.appliedOn.localeCompare(a.appliedOn))
 
   const counts = {
     total: visibleLeaves.length,
@@ -193,7 +206,10 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
       {/* Tabs */}
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
         <div className="border-b border-border px-5 flex flex-wrap gap-x-6 gap-y-1 overflow-x-auto">
-          {([['requests', 'Leave Requests'], ['balances', 'Leave Balances'], ['policy', 'Leave Policy']] as [Tab, string][]).map(([t, label]) => (
+          {(role === 'management'
+            ? ([['requests', 'Leave Requests'], ['balances', 'Leave Balances'], ['policy', 'Leave Policy']] as [Tab, string][])
+            : ([['requests', 'Leave Requests'], ['crm-log', 'CRM Leave Log'], ['balances', 'Leave Balances'], ['policy', 'Leave Policy']] as [Tab, string][])
+          ).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
               className="py-4 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap"
               style={{ borderColor: tab === t ? gold : 'transparent', color: tab === t ? navy : '#7A7065' }}>
@@ -234,7 +250,10 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground">{req.employeeName}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {role !== 'management' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize" style={{ backgroundColor: '#F0EDE7', color: '#7A7065' }}>{req.submittedByRole}</span>
+                        )}
                         <span className="text-xs text-muted-foreground">{req.type} Leave</span>
                         <span className="text-xs text-muted-foreground">·</span>
                         <Calendar size={11} className="text-muted-foreground" />
@@ -309,6 +328,57 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* CRM Leave Log tab — read-only. A CRM employee's leave is decided
+            entirely by their line manager (see ManagerPortal.tsx); HR never
+            approves or rejects it here, only sees who applied, the outcome,
+            and which manager decided it. */}
+        {tab === 'crm-log' && (
+          <div>
+            <div className="px-5 pt-4 pb-2">
+              <p className="text-xs text-muted-foreground">CRM leave is approved or rejected by the employee's line manager. This is a read-only record of every request and its outcome.</p>
+            </div>
+            {crmLeaveLog.length === 0 && (
+              <div className="text-center py-12 text-sm text-muted-foreground">No CRM leave requests yet.</div>
+            )}
+            {crmLeaveLog.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                      <th className="px-5 py-2.5 font-medium">Employee</th>
+                      <th className="px-5 py-2.5 font-medium">Type</th>
+                      <th className="px-5 py-2.5 font-medium">Dates</th>
+                      <th className="px-5 py-2.5 font-medium">Days</th>
+                      <th className="px-5 py-2.5 font-medium">Status</th>
+                      <th className="px-5 py-2.5 font-medium">Decided By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {crmLeaveLog.map(l => {
+                      const decider = l.decidedBy ? employees.find(e => e.id === l.decidedBy) : undefined
+                      return (
+                        <tr key={l.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                          <td className="px-5 py-3 font-medium">{l.employeeName}</td>
+                          <td className="px-5 py-3">{l.type}</td>
+                          <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">{l.startDate} — {l.endDate}</td>
+                          <td className="px-5 py-3">{l.days}</td>
+                          <td className="px-5 py-3">
+                            <span className="px-2.5 py-1 rounded-full text-xs font-medium capitalize"
+                              style={{ backgroundColor: statusStyle[l.status].bg, color: statusStyle[l.status].text }}>{l.status}</span>
+                          </td>
+                          <td className="px-5 py-3 text-muted-foreground">
+                            {l.status === 'pending' ? 'Pending with manager' : (decider ? decider.name : '—')}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

@@ -61,8 +61,8 @@ const ROLE_CARDS: { role: Role; title: string; desc: string }[] = [
 
 const HIERARCHY = [
   { from: 'CRM applies leave', arrow: '→', to: 'Line Manager approves' },
-  { from: 'Line Manager approves', arrow: '→', to: 'HR signs off' },
   { from: 'Manager applies leave', arrow: '→', to: 'HR approves' },
+  { from: 'Finance applies leave', arrow: '→', to: 'HR approves' },
   { from: 'HR applies leave', arrow: '→', to: 'Management approves' },
 ]
 

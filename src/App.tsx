@@ -1226,8 +1226,10 @@ export default function App() {
           <FinancePortal
             payroll={payroll} onPayrollUpdate={onPayrollUpdate}
             {...sharedExpenseProps}
+            {...sharedLeaveProps}
             employees={employees}
             currentEmployee={currentEmployee}
+            employeeId={employeeId}
           />
         )
       case 'hr-dashboard':

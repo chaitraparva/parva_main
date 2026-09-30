@@ -55,18 +55,16 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
   const teamIds = employees.filter(e => e.managerId === employeeId).map(e => e.id)
 
   // Team leave — a CRM employee's leave request lands with their manager
-  // first (see MyPortal.tsx submitLeave). Approving here forwards it to HR
-  // for the final decision, instead of resolving it outright; rejecting
-  // here ends it immediately, the same as HR rejecting one of their own.
+  // first (see MyPortal.tsx submitLeave). The manager's decision here is
+  // final in both directions — approving or rejecting resolves it outright.
+  // HR only ever sees the outcome afterwards, as a read-only record (see
+  // Leave.tsx), and never has to act on it.
   const pendingTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.pendingWith === 'manager')
-  const awaitingHRTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.status === 'pending' && l.pendingWith === 'hr')
   const historyTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.status !== 'pending')
 
   const handleTeamLeave = (id: string, action: 'approved' | 'rejected') => {
     onLeaveUpdate(leaves.map(l => l.id === id
-      ? action === 'approved'
-        ? { ...l, pendingWith: 'hr' }        // manager signs off, HR takes it from here
-        : { ...l, status: 'rejected', pendingWith: 'done' }
+      ? { ...l, status: action, pendingWith: 'done' }
       : l))
   }
 
@@ -97,7 +95,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
       status: 'pending',
       appliedOn: new Date().toISOString().slice(0, 10),
       submittedByRole: 'manager',
-      pendingWith: 'management',
+      pendingWith: 'hr',
     }
     onLeaveUpdate([...leaves, newLeave])
     setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
@@ -268,7 +266,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
                       <button onClick={() => handleTeamLeave(l.id, 'approved')}
                         className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
                         style={{ backgroundColor: '#059669', color: '#fff' }}>
-                        Approve &amp; Forward to HR
+                        Approve
                       </button>
                       <button onClick={() => handleTeamLeave(l.id, 'rejected')}
                         className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
@@ -281,32 +279,6 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
               </div>
             )}
           </div>
-
-          {awaitingHRTeamLeaves.length > 0 && (
-            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-              <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Awaiting HR's Final Decision</h2>
-              <div className="space-y-3">
-                {awaitingHRTeamLeaves.map(l => (
-                  <div key={l.id} className="border border-border rounded-xl p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="font-semibold text-sm" style={{ color: navy }}>{l.employeeName}</p>
-                        <p className="text-xs text-muted-foreground">{l.department} · Applied {l.appliedOn}</p>
-                      </div>
-                      <StatusBadge status={l.status} />
-                    </div>
-                    <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-muted-foreground">
-                      <div><span className="font-medium text-foreground">{l.type}</span><br />Type</div>
-                      <div><span className="font-medium text-foreground">{l.startDate}</span><br />From</div>
-                      <div><span className="font-medium text-foreground">{l.endDate}</span><br />To</div>
-                      <div><span className="font-medium text-foreground">{l.days} days</span><br />Duration</div>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-3">You've approved this — HR makes the final call. Visible here for your reference only.</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {historyTeamLeaves.length > 0 && (
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
@@ -345,7 +317,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
         <div className="space-y-4">
           {leaveFlash && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
-              Submitted — pending management approval.
+              Submitted — pending HR's approval.
             </div>
           )}
           {myBalance && (

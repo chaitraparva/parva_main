@@ -45,11 +45,13 @@ interface Props {
 export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: payrollProp, tickets: employeeTickets, exits: exitRecords, attendance, currentEmployee }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
 
-  // Leave approvals — management only sees and acts on leave belonging to a
-  // manager or to HR itself; a CRM/agent employee's leave is HR's call
-  // alone (see Leave.tsx) and never shows up here for approve/reject — it
-  // only shows up below as part of "Absent Today".
-  const mgmtLeaves = leaves.filter(l => l.submittedByRole === 'manager' || l.submittedByRole === 'hr')
+  // Leave approvals — management only ever acts on HR's own leave requests
+  // now. A CRM/agent employee's leave is decided entirely by their line
+  // manager, and a manager's or finance employee's own leave is decided by
+  // HR (see ManagerPortal.tsx/Leave.tsx) — neither ever reaches the CEO for
+  // approval. They only show up below as part of "Absent Today", which is
+  // the view the CEO actually wants: who's out, not who approved whom.
+  const mgmtLeaves = leaves.filter(l => l.submittedByRole === 'hr')
   const pendingLeaves = mgmtLeaves.filter(l => l.status === 'pending')
   const historyLeaves = mgmtLeaves.filter(l => l.status !== 'pending')
   const [confirmId, setConfirmId] = useState<{ id: string; action: 'approved' | 'rejected' } | null>(null)
@@ -74,14 +76,13 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
   const totalEmployees = employees.length
   const sortedEmployees = sortByRosterOrder(employees)
   const totalMonthlyPayroll = payrollProp.reduce((s, r) => s + r.netPay, 0)
-  const pendingManagerTier = mgmtLeaves.filter(l => l.pendingWith === 'management' && l.submittedByRole === 'manager').length
-  const pendingHRTier = mgmtLeaves.filter(l => l.pendingWith === 'management' && l.submittedByRole === 'hr').length
+  const pendingHRLeave = mgmtLeaves.filter(l => l.pendingWith === 'management').length
   const openTickets = employeeTickets.filter(t => t.status === 'Open' || t.status === 'In Progress' || t.status === 'Pending Info').length
   const activeExits = exitRecords.filter(e => e.status !== 'Completed').length
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
-    { key: 'leave-approvals', label: 'Leave Approvals' },
+    { key: 'leave-approvals', label: 'HR Leave Approvals' },
   ]
 
   return (
@@ -130,17 +131,9 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
               <p className="text-xs text-muted-foreground mt-1">In progress</p>
             </div>
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-3">Pending Your Approval</p>
-              <div className="flex gap-6">
-                <div>
-                  <p className="text-xl font-bold" style={{ color: '#D97706' }}>{pendingManagerTier}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Line Manager</p>
-                </div>
-                <div>
-                  <p className="text-xl font-bold" style={{ color: '#2563EB' }}>{pendingHRTier}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">HR</p>
-                </div>
-              </div>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Pending Your Approval</p>
+              <p className="text-3xl font-bold font-serif" style={{ color: pendingHRLeave > 0 ? '#D97706' : '#059669' }}>{pendingHRLeave}</p>
+              <p className="text-xs text-muted-foreground mt-1">HR leave request{pendingHRLeave === 1 ? '' : 's'}</p>
             </div>
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Absent Today</p>
@@ -268,7 +261,7 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
           )}
 
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Pending Leave Requests</h2>
+            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Pending HR Leave Requests</h2>
             {pendingLeaves.length === 0 ? (
               <p className="text-sm text-muted-foreground">No pending leave requests.</p>
             ) : (
@@ -279,7 +272,7 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
                       <div>
                         <p className="font-semibold text-sm" style={{ color: navy }}>{l.employeeName}</p>
                         <p className="text-xs text-muted-foreground">
-                          {l.department} · Applied {l.appliedOn} · <span className="capitalize">{l.submittedByRole}</span>-submitted
+                          {l.department} · Applied {l.appliedOn}
                         </p>
                       </div>
                       <StatusBadge status={l.status} />

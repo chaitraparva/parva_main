@@ -21,8 +21,10 @@ const gold = '#C9A96E'
 
 export default function HRDashboard({ navigate, employees, leaves, payroll, attendance, tickets, expenses, exits, onboarding, currentEmployee }: Props) {
   const firstName = currentEmployee?.name?.split(' ')[0] || 'there'
-  // Only leave that has actually reached HR's stage — a CRM request still
-  // sitting with the employee's line manager isn't HR's to act on yet.
+  // A manager's or finance employee's own leave request lands with HR
+  // directly. CRM leave is decided entirely by the employee's line manager
+  // and never reaches HR as something to act on (see Leave.tsx's read-only
+  // CRM Leave Log for visibility into those instead).
   const pendingLeave = leaves.filter(l => l.pendingWith === 'hr').length
   const pendingPayroll = payroll.filter(p => p.status === 'pending-hr').length
   const pendingExpenses = expenses.filter(e => e.status === 'Pending').length
