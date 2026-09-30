@@ -51,12 +51,13 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
     const emp = employees.find(e => e.name === form.employeeName)
     // Who this leave belongs to (and who has to act on it) is the target
     // employee's actual job title, not the fact that HR is the one filling
-    // in the form on their behalf: an agent's leave always goes to HR, a
+    // in the form on their behalf: an agent's leave goes to their line
+    // manager first (who forwards it to HR for the final call), a
     // manager's always goes to management (the CEO), and so does anyone
     // else's (admin/hr/finance) — matching how CRM/manager self-service
     // submissions are routed in MyPortal.tsx/ManagerPortal.tsx.
     const submittedByRole = emp?.role === 'agent' ? 'crm' : emp?.role === 'manager' ? 'manager' : 'hr'
-    const pendingWith = emp?.role === 'agent' ? 'hr' : 'management'
+    const pendingWith = emp?.role === 'agent' ? 'manager' : 'management'
     const newLeave: LeaveRequest = {
       id: `lr-${Date.now()}`,
       employeeId: emp?.id || 'emp-x',
@@ -79,13 +80,16 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
     setFilterStatus('pending')
   }
 
-  // HR only acts on agent (CRM) leave — it's never shown to the CEO for
-  // approval, only reflected as an absence (see MgmtPortal.tsx's Absent
-  // Today widget). Management only acts on leave belonging to a manager or
-  // to HR itself — the two tiers report straight to the CEO.
+  // HR acts on agent (CRM) leave only after the employee's line manager has
+  // already approved it (pendingWith moves from 'manager' to 'hr' — see
+  // ManagerPortal.tsx) — a request still sitting with the manager isn't
+  // shown here at all. It's never shown to the CEO for approval either,
+  // only reflected as an absence (see MgmtPortal.tsx's Absent Today
+  // widget). Management only acts on leave belonging to a manager or to HR
+  // itself — the two tiers report straight to the CEO.
   const visibleLeaves = role === 'management'
     ? leaves.filter(l => l.submittedByRole === 'manager' || l.submittedByRole === 'hr')
-    : leaves.filter(l => l.submittedByRole === 'crm')
+    : leaves.filter(l => l.submittedByRole === 'crm' && l.pendingWith !== 'manager')
 
   const filtered = visibleLeaves.filter(l => filterStatus === 'all' || l.status === filterStatus)
 

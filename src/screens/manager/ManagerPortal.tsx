@@ -54,11 +54,21 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
   // People who report directly to whoever is signed in.
   const teamIds = employees.filter(e => e.managerId === employeeId).map(e => e.id)
 
-  // Team leave — view-only. A CRM employee's leave now goes straight to HR
-  // for approval/rejection (see MyPortal.tsx submitLeave), so a manager no
-  // longer approves it here; this tab just shows where each request stands.
-  const pendingTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.status === 'pending')
+  // Team leave — a CRM employee's leave request lands with their manager
+  // first (see MyPortal.tsx submitLeave). Approving here forwards it to HR
+  // for the final decision, instead of resolving it outright; rejecting
+  // here ends it immediately, the same as HR rejecting one of their own.
+  const pendingTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.pendingWith === 'manager')
+  const awaitingHRTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.status === 'pending' && l.pendingWith === 'hr')
   const historyTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.status !== 'pending')
+
+  const handleTeamLeave = (id: string, action: 'approved' | 'rejected') => {
+    onLeaveUpdate(leaves.map(l => l.id === id
+      ? action === 'approved'
+        ? { ...l, pendingWith: 'hr' }        // manager signs off, HR takes it from here
+        : { ...l, status: 'rejected', pendingWith: 'done' }
+      : l))
+  }
 
   // My leave
   const myLeaves = leaves.filter(l => l.employeeId === employeeId)
@@ -233,9 +243,9 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
       {tab === 'team-leave' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Pending — Awaiting HR</h2>
+            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Pending Your Approval</h2>
             {pendingTeamLeaves.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No pending leave requests.</p>
+              <p className="text-sm text-muted-foreground">No leave requests waiting on you.</p>
             ) : (
               <div className="space-y-3">
                 {pendingTeamLeaves.map(l => (
@@ -254,12 +264,49 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
                       <div><span className="font-medium text-foreground">{l.days} days</span><br />Duration</div>
                     </div>
                     <p className="text-sm mt-2 text-muted-foreground italic">"{l.reason}"</p>
-                    <p className="text-xs text-muted-foreground mt-3">Awaiting HR's decision — visible here for your reference only.</p>
+                    <div className="flex gap-3 mt-3">
+                      <button onClick={() => handleTeamLeave(l.id, 'approved')}
+                        className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                        style={{ backgroundColor: '#059669', color: '#fff' }}>
+                        Approve &amp; Forward to HR
+                      </button>
+                      <button onClick={() => handleTeamLeave(l.id, 'rejected')}
+                        className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                        style={{ backgroundColor: '#DC2626', color: '#fff' }}>
+                        Reject
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
+
+          {awaitingHRTeamLeaves.length > 0 && (
+            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+              <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Awaiting HR's Final Decision</h2>
+              <div className="space-y-3">
+                {awaitingHRTeamLeaves.map(l => (
+                  <div key={l.id} className="border border-border rounded-xl p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-semibold text-sm" style={{ color: navy }}>{l.employeeName}</p>
+                        <p className="text-xs text-muted-foreground">{l.department} · Applied {l.appliedOn}</p>
+                      </div>
+                      <StatusBadge status={l.status} />
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-muted-foreground">
+                      <div><span className="font-medium text-foreground">{l.type}</span><br />Type</div>
+                      <div><span className="font-medium text-foreground">{l.startDate}</span><br />From</div>
+                      <div><span className="font-medium text-foreground">{l.endDate}</span><br />To</div>
+                      <div><span className="font-medium text-foreground">{l.days} days</span><br />Duration</div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-3">You've approved this — HR makes the final call. Visible here for your reference only.</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {historyTeamLeaves.length > 0 && (
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">

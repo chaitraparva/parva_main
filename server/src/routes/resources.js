@@ -12,14 +12,16 @@ export const leaveRequestsRouter = crudRouter({
     'employeeId', 'type', 'startDate', 'endDate', 'days', 'reason',
     'status', 'submittedByRole', 'pendingWith', 'decidedBy', 'decidedAt',
   ],
-  // Anyone can submit their own leave request (POST); only HR or management
-  // can move it to approved/rejected (PATCH) — a manager no longer approves
-  // leave directly (see Leave.tsx/MgmtPortal.tsx/ManagerPortal.tsx: CRM leave
-  // goes straight to HR, a manager's own leave goes to management, and a
-  // manager's "Team Leave" tab is read-only). Without this restriction, any
-  // signed-in employee could approve their own leave request by calling the
-  // API directly, since no screen ever lets an employee PATCH their own row.
-  updateRoles: ['hr', 'management'],
+  // Anyone can submit their own leave request (POST). PATCH (moving a
+  // request forward/approved/rejected) is restricted to the three roles
+  // that ever act on someone else's leave: a manager approves their CRM
+  // team's request first (forwarding it to HR, see ManagerPortal.tsx), HR
+  // gives the final word on that same CRM request (see Leave.tsx), and
+  // management approves a manager's or HR's own leave (see MgmtPortal.tsx).
+  // Without this restriction, any signed-in employee could approve their
+  // own leave request by calling the API directly, since no screen ever
+  // lets an employee PATCH their own row.
+  updateRoles: ['manager', 'hr', 'management'],
 })
 
 export const payrollRecordsRouter = crudRouter({

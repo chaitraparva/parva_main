@@ -21,7 +21,9 @@ const gold = '#C9A96E'
 
 export default function HRDashboard({ navigate, employees, leaves, payroll, attendance, tickets, expenses, exits, onboarding, currentEmployee }: Props) {
   const firstName = currentEmployee?.name?.split(' ')[0] || 'there'
-  const pendingLeave = leaves.filter(l => l.status === 'pending').length
+  // Only leave that has actually reached HR's stage — a CRM request still
+  // sitting with the employee's line manager isn't HR's to act on yet.
+  const pendingLeave = leaves.filter(l => l.pendingWith === 'hr').length
   const pendingPayroll = payroll.filter(p => p.status === 'pending-hr').length
   const pendingExpenses = expenses.filter(e => e.status === 'Pending').length
   const openTickets = tickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed').length

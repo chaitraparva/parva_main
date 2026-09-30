@@ -270,7 +270,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
       status: 'pending',
       appliedOn: new Date().toISOString().slice(0, 10),
       submittedByRole: 'crm',
-      pendingWith: 'hr',
+      pendingWith: 'manager',
     }
     onLeaveUpdate([...leaves, newLeave])
     setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
@@ -348,7 +348,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
         <div className="space-y-4">
           {leaveFlash && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
-              Submitted — pending HR&apos;s approval.
+              Submitted — pending your manager&apos;s approval.
             </div>
           )}
           {/* Leave Balance */}
