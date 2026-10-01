@@ -295,6 +295,13 @@ export async function updateTimesheetEntry(id: string, patch: Partial<Omit<RawTi
   return data.timesheet_entry
 }
 
+// Only the employee who logged it can delete their own entry (server-
+// enforced, see server/src/routes/resources.js) — no status restriction,
+// since timesheet entries don't go through an approval workflow.
+export async function deleteTimesheetEntry(id: string): Promise<void> {
+  await request<null>(`/api/timesheet-entries/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
 export async function createAttendanceRecord(input: Omit<RawAttendanceRecord, 'id'>): Promise<RawAttendanceRecord> {
   const data = await request<{ attendance_record: RawAttendanceRecord }>('/api/attendance-records', {
     method: 'POST',
@@ -346,6 +353,15 @@ export async function updateExpenseClaim(id: string, patch: Partial<Omit<RawExpe
     body: JSON.stringify(patch),
   })
   return data.expense_claim
+}
+
+// Only the employee who filed it can delete their own claim, and only
+// while it's still 'Pending' — the server enforces both (see
+// server/src/routes/resources.js), so a rejected delete here surfaces
+// whatever message it sends back (e.g. "This can't be deleted once it's
+// approved.").
+export async function deleteExpenseClaim(id: string): Promise<void> {
+  await request<null>(`/api/expense-claims/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 // ---- Expense receipt photos (real backend storage — Supabase Storage) ----

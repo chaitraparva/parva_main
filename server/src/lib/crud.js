@@ -31,8 +31,18 @@ import { asyncHandler } from './async-handler.js'
  * open also leaves PATCH open to everyone — meaning any signed-in employee
  * could approve their own (or anyone else's) pending request by calling the
  * API directly, even if the UI never shows them that option.
+ *
+ * DELETE /:id is opt-in per table via selfDelete/deleteRoles (unlike
+ * GET/POST/PATCH above, there's no DELETE at all unless one of these is
+ * set) — pass selfDelete: true to let an employee delete their OWN row
+ * (matched by employeeId, checked against the signed-in session, never
+ * trusted from the request body), optionally narrowed with
+ * selfDeleteStatuses (e.g. an expense claim can only be self-deleted while
+ * still 'Pending' — once HR/finance has acted on it, deleting it would
+ * corrupt their records). Pass deleteRoles separately for roles allowed to
+ * delete ANY row regardless of ownership/status.
  */
-export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles, updateRoles }) {
+export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles, updateRoles, deleteRoles, selfDelete, selfDeleteStatuses }) {
   // Read stays open to any signed-in user; only writes are role-gated
   // (see writeGuard/updateGuard below).
   const router = Router()
@@ -84,6 +94,26 @@ export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles,
     res.json({ [singular(table)]: toCamel(rows[0]) })
   }))
 
+  if (selfDelete || deleteRoles) {
+    router.delete('/:id', asyncHandler(async (req, res) => {
+      const { rows } = await pool.query(`SELECT * FROM ${table} WHERE ${idColumn} = $1`, [req.params.id])
+      const existing = rows[0]
+      if (!existing) return res.status(404).json({ error: 'Not found.' })
+
+      const hasDeleteRole = deleteRoles?.includes(req.auth.loginRole)
+      const isOwner = selfDelete && existing.employee_id === req.auth.employeeId
+      if (!hasDeleteRole && !isOwner) {
+        return res.status(403).json({ error: 'You do not have permission to delete this.' })
+      }
+      if (isOwner && !hasDeleteRole && selfDeleteStatuses && !selfDeleteStatuses.includes(existing.status)) {
+        return res.status(400).json({ error: `This can't be deleted once it's ${String(existing.status).toLowerCase()}.` })
+      }
+
+      await pool.query(`DELETE FROM ${table} WHERE ${idColumn} = $1`, [req.params.id])
+      res.status(204).end()
+    }))
+  }
+
   return router
 }
 
@@ -96,5 +126,12 @@ function pick(obj, keys) {
 }
 
 function singular(table) {
+  // Naive de-pluralization used only to name the single-row response key on
+  // POST/PATCH (e.g. 'expense_claims' -> 'expense_claim'). Needs the 'ies'
+  // -> 'y' case specifically for 'timesheet_entries' -> 'timesheet_entry'
+  // (plain trailing-'s' stripping gave the wrong 'timesheet_entrie' — found
+  // while testing the new DELETE route below; harmless in practice since
+  // nothing read that key, but worth having correct).
+  if (table.endsWith('ies')) return table.slice(0, -3) + 'y'
   return table.endsWith('s') ? table.slice(0, -1) : table
 }

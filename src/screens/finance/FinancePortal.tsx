@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { PayrollRecord, ExpenseClaim, Employee, LeaveRequest } from '../../types'
+import type { PayrollRecord, ExpenseClaim, Employee, LeaveRequest, AttendanceRecord } from '../../types'
 import { DollarSign } from 'lucide-react'
 import { computeLeaveBalance, LEAVE_POLICY } from '../../lib/leaveBalance'
 
@@ -7,7 +7,7 @@ const navy = '#1C2B4A'
 const gold = '#C9A96E'
 
 const LEAVE_TYPES = ['Sick', 'Casual', 'Earned', 'Unpaid'] as const
-type Tab = 'overview' | 'payroll-signoff' | 'reimbursements' | 'my-leave'
+type Tab = 'overview' | 'payroll-signoff' | 'reimbursements' | 'my-leave' | 'my-attendance'
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -15,6 +15,10 @@ function StatusBadge({ status }: { status: string }) {
     pending: 'bg-amber-50 text-amber-700',
     approved: 'bg-emerald-50 text-emerald-700',
     rejected: 'bg-red-50 text-red-600',
+    present: 'bg-emerald-50 text-emerald-700',
+    absent: 'bg-red-50 text-red-600',
+    late: 'bg-amber-50 text-amber-700',
+    'half-day': 'bg-purple-50 text-purple-700',
   }
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${map[status] || 'bg-gray-100 text-gray-600'}`}>
@@ -33,9 +37,11 @@ interface Props {
   leaves: LeaveRequest[]
   onLeaveUpdate: (l: LeaveRequest[]) => void
   employeeId: string
+  attendance: AttendanceRecord[]
+  onAttendanceUpdate: (next: AttendanceRecord[]) => Promise<void>
 }
 
-export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, expenses, onExpensesUpdate, employees, currentEmployee, leaves, onLeaveUpdate, employeeId }: Props) {
+export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, expenses, onExpensesUpdate, employees, currentEmployee, leaves, onLeaveUpdate, employeeId, attendance: attendanceRecords, onAttendanceUpdate }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
 
   // My Leave — a finance employee's own leave request, same self-service
@@ -74,6 +80,52 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
     setLeaveFlash(true)
     setTimeout(() => setLeaveFlash(false), 4000)
   }
+
+  // My Attendance — same self-service pattern as ManagerPortal.tsx/
+  // MyPortal.tsx: everyone marks their own day manually until biometric
+  // attendance exists. onAttendanceUpdate rejects on a failed save (see
+  // App.tsx) instead of only logging it, so a real failure shows a red
+  // error here instead of a false "saved" message that silently reverts.
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const myTodayAttendance = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
+  const [selfAttForm, setSelfAttForm] = useState(() => {
+    const existing = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
+    return existing
+      ? { checkIn: existing.checkIn, checkOut: existing.checkOut, status: existing.status }
+      : { checkIn: '09:00', checkOut: '18:00', status: 'present' as AttendanceRecord['status'] }
+  })
+  const [selfAttFlash, setSelfAttFlash] = useState(false)
+  const [selfAttError, setSelfAttError] = useState('')
+  const [selfAttSaving, setSelfAttSaving] = useState(false)
+
+  async function markMyAttendance() {
+    const existing = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
+    setSelfAttError('')
+    setSelfAttSaving(true)
+    try {
+      if (existing) {
+        await onAttendanceUpdate(attendanceRecords.map(r => r.id === existing.id ? { ...r, ...selfAttForm } : r))
+      } else {
+        const newRec: AttendanceRecord = {
+          id: `att-${Date.now()}`,
+          employeeId,
+          employeeName: meName,
+          date: todayIso,
+          ...selfAttForm,
+        }
+        await onAttendanceUpdate([...attendanceRecords, newRec])
+      }
+      setSelfAttFlash(true)
+      setTimeout(() => setSelfAttFlash(false), 3000)
+    } catch (err) {
+      setSelfAttError(err instanceof Error ? err.message : 'Something went wrong while saving. Please try again.')
+    } finally {
+      setSelfAttSaving(false)
+    }
+  }
+  const myAttendanceHistory = attendanceRecords
+    .filter(r => r.employeeId === employeeId)
+    .sort((a, b) => b.date.localeCompare(a.date))
 
   // Payroll sign-off — HR processes a record, then it lands here for
   // Finance to give the final sign-off and mark it disbursed.
@@ -115,6 +167,7 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
     { key: 'payroll-signoff', label: 'Payroll Sign-off' },
     { key: 'reimbursements', label: 'Reimbursements' },
     { key: 'my-leave', label: 'My Leave' },
+    { key: 'my-attendance', label: 'My Attendance' },
   ]
 
   return (
@@ -457,6 +510,88 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MY ATTENDANCE */}
+      {tab === 'my-attendance' && (
+        <div className="space-y-4">
+          {selfAttFlash && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
+              Today's attendance saved.
+            </div>
+          )}
+          {selfAttError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {selfAttError}
+            </div>
+          )}
+          <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+            <h2 className="font-semibold text-base mb-1" style={{ color: navy }}>Mark Today's Attendance</h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              {myTodayAttendance ? `Already marked for today (${todayIso}) — update it below if needed.` : `Not yet marked for today (${todayIso}).`}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Status</label>
+                <select
+                  value={selfAttForm.status}
+                  onChange={e => setSelfAttForm(p => ({ ...p, status: e.target.value as AttendanceRecord['status'] }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none"
+                >
+                  <option value="present">Present</option>
+                  <option value="late">Late</option>
+                  <option value="half-day">Half Day</option>
+                  <option value="absent">Absent</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Check In</label>
+                <input type="time" value={selfAttForm.checkIn} onChange={e => setSelfAttForm(p => ({ ...p, checkIn: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Check Out</label>
+                <input type="time" value={selfAttForm.checkOut} onChange={e => setSelfAttForm(p => ({ ...p, checkOut: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
+              </div>
+              <div className="flex items-end">
+                <button onClick={markMyAttendance} disabled={selfAttSaving}
+                  className="w-full px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
+                  style={{ background: navy }}>
+                  {selfAttSaving ? 'Saving…' : myTodayAttendance ? 'Update' : 'Mark Attendance'}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+            <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>My Attendance History</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[480px]">
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                    <th className="pb-2 font-medium">Date</th>
+                    <th className="pb-2 font-medium">Check In</th>
+                    <th className="pb-2 font-medium">Check Out</th>
+                    <th className="pb-2 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myAttendanceHistory.map(r => (
+                    <tr key={r.id} className="border-b border-border hover:bg-muted/20">
+                      <td className="py-2.5">{r.date}</td>
+                      <td className="py-2.5">{r.checkIn}</td>
+                      <td className="py-2.5">{r.checkOut}</td>
+                      <td className="py-2.5"><StatusBadge status={r.status} /></td>
+                    </tr>
+                  ))}
+                  {myAttendanceHistory.length === 0 && (
+                    <tr><td colSpan={4} className="py-6 text-center text-sm text-muted-foreground">No attendance marked yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

@@ -474,6 +474,22 @@ export default function App() {
       }
     }
   }
+  // Deletes one of the signed-in employee's own entries (the server checks
+  // ownership itself — see server/src/routes/resources.js/selfDelete — so
+  // this never trusts the frontend alone). Same propagate-the-error,
+  // refetch-in-finally shape as onSaveTimesheetEntry above, for the same
+  // reason: MyTimesheet.tsx needs to know if it actually failed.
+  const onDeleteTimesheetEntry = async (id: string) => {
+    try {
+      await api.deleteTimesheetEntry(id)
+    } finally {
+      try {
+        setRawTimesheet(await api.fetchTimesheetEntries())
+      } catch {
+        // Offline/unreachable — stay on whatever's already shown.
+      }
+    }
+  }
   // Same generic diff-and-sync approach as onPayrollUpdate/onAttendanceUpdate
   // — comments are excluded from TICKET_FIELDS entirely (they're not a
   // column here, see api.ts/ticketFieldsOf), so adding a reply never runs
@@ -1236,6 +1252,8 @@ export default function App() {
             employees={employees}
             currentEmployee={currentEmployee}
             employeeId={employeeId}
+            attendance={attendance}
+            onAttendanceUpdate={onAttendanceUpdate}
           />
         )
       case 'hr-dashboard':
@@ -1258,7 +1276,7 @@ export default function App() {
       case 'attendance-hr':
         return <AttendanceHR employees={employees} attendance={attendance} onAttendanceUpdate={onAttendanceUpdate} />
       case 'my-timesheet':
-        return <MyTimesheet employeeId={employeeId} employees={employees} timesheet={timesheet} onSaveEntry={onSaveTimesheetEntry} />
+        return <MyTimesheet employeeId={employeeId} employees={employees} timesheet={timesheet} onSaveEntry={onSaveTimesheetEntry} onDeleteEntry={onDeleteTimesheetEntry} />
       case 'team-timesheet':
         return <TeamTimesheet employees={employees} timesheet={timesheet} />
       case 'leave':

@@ -53,6 +53,9 @@ export const timesheetEntriesRouter = crudRouter({
   // Every CRM employee logs their own day (POST) and can go back and correct
   // an earlier entry (PATCH) — there's no approval workflow here, unlike
   // leave/expenses/tickets, so this stays open to any signed-in employee.
+  // DELETE follows the same logic — no approval to protect — so anyone can
+  // remove their own logged day (e.g. a duplicate/mistaken entry).
+  selfDelete: true,
 })
 
 export const expenseClaimsRouter = crudRouter({
@@ -69,6 +72,11 @@ export const expenseClaimsRouter = crudRouter({
   // Without this restriction, any signed-in employee could approve their own
   // claim by calling the API directly, regardless of what the UI shows them.
   updateRoles: ['hr', 'finance'],
+  // Anyone can delete their OWN claim, but only while it's still 'Pending' —
+  // once HR has approved/rejected it or finance has reimbursed it, deleting
+  // it would silently break their records, so selfDeleteStatuses blocks that.
+  selfDelete: true,
+  selfDeleteStatuses: ['Pending'],
 })
 
 export const ticketsRouter = crudRouter({

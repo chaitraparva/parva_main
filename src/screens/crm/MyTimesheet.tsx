@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import type { MouseEvent } from 'react'
 import type { Employee, TimesheetEntry } from '../../types'
 import { computeHours } from '../../lib/timesheetStore'
-import { Clock, Save, CheckCircle2, Calendar } from 'lucide-react'
+import { Clock, Save, CheckCircle2, Calendar, Trash2 } from 'lucide-react'
 
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
@@ -34,9 +35,10 @@ interface MyTimesheetProps {
   employees: Employee[]
   timesheet: TimesheetEntry[]
   onSaveEntry: (entry: Omit<TimesheetEntry, 'id' | 'loggedAt'>) => Promise<void>
+  onDeleteEntry: (id: string) => Promise<void>
 }
 
-export default function MyTimesheet({ employeeId, employees, timesheet, onSaveEntry }: MyTimesheetProps) {
+export default function MyTimesheet({ employeeId, employees, timesheet, onSaveEntry, onDeleteEntry }: MyTimesheetProps) {
   const me = employees.find(e => e.id === employeeId)
   const entries = timesheet
     .filter(e => e.employeeId === employeeId)
@@ -45,6 +47,22 @@ export default function MyTimesheet({ employeeId, employees, timesheet, onSaveEn
   const [savedFlash, setSavedFlash] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const handleDelete = async (e: MouseEvent, id: string) => {
+    e.stopPropagation() // don't also trigger the row's loadDay click
+    if (!window.confirm('Delete this timesheet entry? This cannot be undone.')) return
+    setDeleteError(null)
+    setDeletingId(id)
+    try {
+      await onDeleteEntry(id)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Could not delete this entry. Please try again.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const loadDay = (date: string) => {
     const existing = entries.find(e => e.date === date)
@@ -214,11 +232,16 @@ export default function MyTimesheet({ employeeId, employees, timesheet, onSaveEn
           <h3 className="font-serif text-lg font-semibold text-foreground">My Recent Entries</h3>
           <span className="ml-auto text-xs text-muted-foreground">{me?.name}</span>
         </div>
+        {deleteError && (
+          <div className="mx-5 mt-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+            {deleteError}
+          </div>
+        )}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px]">
+          <table className="w-full min-w-[840px]">
             <thead>
               <tr className="border-b border-border bg-muted/20">
-                {['Date', 'Day', 'Shift', 'Hours', 'Leads', 'Calls', 'Connected', 'Sales Closed'].map(h => (
+                {['Date', 'Day', 'Shift', 'Hours', 'Leads', 'Calls', 'Connected', 'Sales Closed', 'Action'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -234,10 +257,16 @@ export default function MyTimesheet({ employeeId, employees, timesheet, onSaveEn
                   <td className="px-4 py-3 text-sm text-muted-foreground">{e.callsMade}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{e.connectedCalls}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{e.salesClosed}</td>
+                  <td className="px-4 py-3 text-sm">
+                    <button onClick={ev => handleDelete(ev, e.id)} disabled={deletingId === e.id}
+                      className="flex items-center gap-1 text-xs font-medium disabled:opacity-50" style={{ color: '#DC2626' }} title="Delete entry">
+                      <Trash2 size={13} /> {deletingId === e.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </td>
                 </tr>
               ))}
               {entries.length === 0 && (
-                <tr><td colSpan={8} className="text-center py-10 text-sm text-muted-foreground">No entries logged yet.</td></tr>
+                <tr><td colSpan={9} className="text-center py-10 text-sm text-muted-foreground">No entries logged yet.</td></tr>
               )}
             </tbody>
           </table>

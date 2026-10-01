@@ -246,6 +246,25 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
     }
   }
 
+  // Delete your own claim — only while it's still 'Pending' (the server
+  // enforces this too, see server/src/routes/resources.js, so this is just
+  // the UI reflecting the same rule rather than relying on it).
+  const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null)
+  const [deleteExpenseError, setDeleteExpenseError] = useState('')
+  async function deleteExpense(claimId: string) {
+    if (!window.confirm('Delete this expense claim? This cannot be undone.')) return
+    setDeleteExpenseError('')
+    setDeletingExpenseId(claimId)
+    try {
+      await api.deleteExpenseClaim(claimId)
+      await onExpensesRefetch()
+    } catch (err) {
+      setDeleteExpenseError(err instanceof Error ? err.message : 'Could not delete this claim. Please try again.')
+    } finally {
+      setDeletingExpenseId(null)
+    }
+  }
+
   function exportMyExpenses() {
     downloadExcel(
       `my-expense-claims-${new Date().toISOString().slice(0, 10)}.xlsx`,
@@ -692,6 +711,12 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
             </div>
           )}
 
+          {deleteExpenseError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {deleteExpenseError}
+            </div>
+          )}
+
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[520px]">
@@ -703,6 +728,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
                     <th className="pb-2 font-medium">Amount</th>
                     <th className="pb-2 font-medium">Receipt</th>
                     <th className="pb-2 font-medium">Status</th>
+                    <th className="pb-2 font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -722,10 +748,18 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
                         ) : <span className="text-muted-foreground">—</span>}
                       </td>
                       <td className="py-2.5"><StatusBadge status={e.status} /></td>
+                      <td className="py-2.5">
+                        {e.status === 'Pending' ? (
+                          <button onClick={() => deleteExpense(e.id)} disabled={deletingExpenseId === e.id}
+                            className="flex items-center gap-1 text-xs font-medium disabled:opacity-50" style={{ color: '#DC2626' }} title="Delete claim">
+                            <Trash2 size={13} /> {deletingExpenseId === e.id ? 'Deleting…' : 'Delete'}
+                          </button>
+                        ) : <span className="text-muted-foreground text-xs">—</span>}
+                      </td>
                     </tr>
                   ))}
                   {myExpenses.length === 0 && (
-                    <tr><td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">No expense claims yet.</td></tr>
+                    <tr><td colSpan={7} className="py-6 text-center text-sm text-muted-foreground">No expense claims yet.</td></tr>
                   )}
                 </tbody>
               </table>
