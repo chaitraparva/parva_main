@@ -101,6 +101,12 @@ export const exitRecordsRouter = crudRouter({
     'clearanceChecklist',
   ],
   writeRoles: ['hr', 'management'],
+  // clearanceChecklist is a JS array going into a jsonb column — without
+  // this, every create/update that touches it (which is every one, since
+  // ExitManagement.tsx always sends the full record) fails server-side and
+  // the frontend's optimistic update reverts on its next refetch. See
+  // crud.js's jsonColumns doc comment for the full story.
+  jsonColumns: ['clearanceChecklist'],
 })
 
 export const jobRequisitionsRouter = crudRouter({
@@ -170,4 +176,10 @@ export const onboardingCandidatesRouter = crudRouter({
     'docStatus', 'onboardingProgress', 'checklistDone', 'docItems',
   ],
   writeRoles: ['hr', 'management'],
+  // checklistDone (string[]) is the same "JS array into a jsonb column"
+  // case as exit_records.clearanceChecklist above — same fix, same reason.
+  // docItems is a plain object, not an array, so it isn't strictly broken
+  // by this (node-postgres already JSON.stringify()s plain objects
+  // correctly) — it's listed anyway for explicitness/consistency.
+  jsonColumns: ['checklistDone', 'docItems'],
 })

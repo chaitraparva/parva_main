@@ -41,8 +41,21 @@ import { asyncHandler } from './async-handler.js'
  * still 'Pending' — once HR/finance has acted on it, deleting it would
  * corrupt their records). Pass deleteRoles separately for roles allowed to
  * delete ANY row regardless of ownership/status.
+ *
+ * jsonColumns: list any allowedColumns whose value is a JS ARRAY that gets
+ * stored in a JSONB column (e.g. exit_records.clearance_checklist,
+ * onboarding_candidates.checklistDone). This matters because node-postgres
+ * does NOT know a parameter is headed for a jsonb column — by default it
+ * serializes a bare JS array as a Postgres ARRAY literal (`{"...","..."}`),
+ * not a JSON array (`[...]`), so every INSERT/UPDATE touching that column
+ * fails outright with "invalid input syntax for type json". The symptom on
+ * the frontend is exactly a save that silently fails and then reverts on
+ * the next refetch — the change looks like it "flashes and disappears".
+ * A plain JS OBJECT (not array) going into a jsonb column doesn't need
+ * this — node-postgres already JSON.stringify()s those correctly — but
+ * listing an object column here too is harmless and more explicit.
  */
-export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles, updateRoles, deleteRoles, selfDelete, selfDeleteStatuses }) {
+export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles, updateRoles, deleteRoles, selfDelete, selfDeleteStatuses, jsonColumns }) {
   // Read stays open to any signed-in user; only writes are role-gated
   // (see writeGuard/updateGuard below).
   const router = Router()
@@ -72,6 +85,7 @@ export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles,
   router.post('/', ...writeGuard, asyncHandler(async (req, res) => {
     const body = pick(req.body, allowedColumns)
     if (Object.keys(body).length === 0) return res.status(400).json({ error: 'No valid fields supplied.' })
+    stringifyJsonColumns(body, jsonColumns)
     const snake = toSnake(body)
     const columns = Object.keys(snake)
     const values = Object.values(snake)
@@ -84,6 +98,7 @@ export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles,
   router.patch('/:id', ...updateGuard, asyncHandler(async (req, res) => {
     const body = pick(req.body, allowedColumns)
     if (Object.keys(body).length === 0) return res.status(400).json({ error: 'No valid fields supplied.' })
+    stringifyJsonColumns(body, jsonColumns)
     const snake = toSnake(body)
     const columns = Object.keys(snake)
     const values = Object.values(snake)
@@ -115,6 +130,17 @@ export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles,
   }
 
   return router
+}
+
+// Mutates body in place: any key listed in jsonColumns that's present on
+// body gets JSON.stringify()'d, so node-postgres sends it as plain text
+// (which Postgres then casts into the jsonb column) instead of silently
+// misreading a JS array as a Postgres ARRAY literal. See the jsonColumns
+// doc comment on crudRouter above for why this is necessary at all.
+function stringifyJsonColumns(body, jsonColumns) {
+  for (const col of jsonColumns || []) {
+    if (Object.prototype.hasOwnProperty.call(body, col)) body[col] = JSON.stringify(body[col])
+  }
 }
 
 function pick(obj, keys) {
