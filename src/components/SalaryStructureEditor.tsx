@@ -6,7 +6,7 @@ const navy = '#1C2B4A'
 
 interface Props {
   employee: Employee
-  onSave: (patch: Partial<Employee>) => void
+  onSave: (patch: Partial<Employee>) => Promise<void>
 }
 
 /**
@@ -29,23 +29,33 @@ export default function SalaryStructureEditor({ employee, onSave }: Props) {
   const [aadharNumber, setAadharNumber] = useState(employee.aadharNumber || '')
   const [panNumber, setPanNumber] = useState(employee.panNumber || '')
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   const num = (s: string) => (s.trim() === '' ? 0 : Math.max(0, parseFloat(s) || 0))
 
-  function handleSave() {
-    onSave({
-      baseSalary: num(basicSalary),
-      hra: num(hra),
-      conveyanceAllowance: num(conveyanceAllowance),
-      medicalAllowance: num(medicalAllowance),
-      otherAllowance: num(otherAllowance),
-      dob: dob.trim(),
-      gender: gender.trim(),
-      aadharNumber: aadharNumber.trim(),
-      panNumber: panNumber.trim(),
-    })
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+  async function handleSave() {
+    setError('')
+    setSaving(true)
+    try {
+      await onSave({
+        baseSalary: num(basicSalary),
+        hra: num(hra),
+        conveyanceAllowance: num(conveyanceAllowance),
+        medicalAllowance: num(medicalAllowance),
+        otherAllowance: num(otherAllowance),
+        dob: dob.trim(),
+        gender: gender.trim(),
+        aadharNumber: aadharNumber.trim(),
+        panNumber: panNumber.trim(),
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save these details. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -116,12 +126,19 @@ export default function SalaryStructureEditor({ employee, onSave }: Props) {
             </div>
           </div>
 
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-xs font-medium">
+              {error}
+            </div>
+          )}
+
           <button
             onClick={handleSave}
-            className="w-full py-2 rounded-lg text-sm font-semibold text-white transition-all"
+            disabled={saving}
+            className="w-full py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-60"
             style={{ backgroundColor: saved ? '#10B981' : navy }}
           >
-            {saved ? '✓ Saved' : 'Save'}
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
           </button>
         </div>
       )}

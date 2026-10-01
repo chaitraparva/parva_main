@@ -26,26 +26,33 @@ const priorityBadge: Record<Notification['priority'], string> = {
 
 interface NotificationsProps {
   notifications: Notification[]
-  onNotificationsUpdate: (next: Notification[]) => void
+  onNotificationsUpdate: (next: Notification[]) => Promise<void>
 }
 
 export default function Notifications({ notifications: initial, onNotificationsUpdate }: NotificationsProps) {
   const [notifs, setNotifs] = useState(initial)
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  const [saveError, setSaveError] = useState('')
 
   // Re-sync if the parent's persisted copy changes underneath us (e.g. the
   // initial backend fetch finishing after this screen has already mounted).
   useEffect(() => { setNotifs(initial) }, [initial])
 
   const markRead = (id: string) => {
+    setSaveError('')
     const next = notifs.map((n) => n.id === id ? { ...n, read: true } : n)
     setNotifs(next)
-    onNotificationsUpdate(next)
+    onNotificationsUpdate(next).catch(err => {
+      setSaveError(err instanceof Error ? err.message : 'Could not save that. Please try again.')
+    })
   }
   const markAllRead = () => {
+    setSaveError('')
     const next = notifs.map((n) => ({ ...n, read: true }))
     setNotifs(next)
-    onNotificationsUpdate(next)
+    onNotificationsUpdate(next).catch(err => {
+      setSaveError(err instanceof Error ? err.message : 'Could not save that. Please try again.')
+    })
   }
 
   const filtered = filter === 'unread' ? notifs.filter((n) => !n.read) : notifs
@@ -69,6 +76,12 @@ export default function Notifications({ notifications: initial, onNotificationsU
           </button>
         )}
       </div>
+
+      {saveError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium mb-4">
+          {saveError}
+        </div>
+      )}
 
       <div className="space-y-3">
         {filtered.map((notif) => {

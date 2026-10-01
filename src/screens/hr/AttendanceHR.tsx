@@ -36,14 +36,17 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
   const trackedEmployees = employees.filter(e => !ATTENDANCE_EXCLUDED_IDS.includes(e.id))
   const [records, setRecordsLocal] = useState<AttendanceRecord[]>(attendance)
   useEffect(() => { setRecordsLocal(attendance) }, [attendance])
+  const [saveError, setSaveError] = useState('')
   const setRecords = (updater: AttendanceRecord[] | ((prev: AttendanceRecord[]) => AttendanceRecord[])) => {
+    setSaveError('')
     setRecordsLocal(prev => {
       const next = typeof updater === 'function' ? (updater as (prev: AttendanceRecord[]) => AttendanceRecord[])(prev) : updater
-      // onAttendanceUpdate now rejects on a failed save (see App.tsx) instead
-      // of only logging it — this screen doesn't yet surface that to the UI,
-      // so just catch it here to avoid an unhandled-rejection console error;
-      // the state still reverts correctly via the refetch in App.tsx either way.
-      onAttendanceUpdate(next).catch(() => { })
+      // onAttendanceUpdate rejects on a failed save (see App.tsx) — surface
+      // that here instead of letting it silently revert on the next
+      // refetch with no explanation.
+      onAttendanceUpdate(next).catch(err => {
+        setSaveError(err instanceof Error ? err.message : 'Could not save that attendance change. Please try again.')
+      })
       return next
     })
   }
@@ -127,6 +130,12 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
           <Plus size={15} /> Mark Attendance
         </button>
       </div>
+
+      {saveError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+          {saveError}
+        </div>
+      )}
 
       {/* Mark form */}
       {showMarkForm && (

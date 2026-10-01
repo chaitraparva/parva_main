@@ -529,6 +529,7 @@ export default function App() {
       await api.createTicketComment(ticketId, text)
     } catch (err) {
       console.error('Failed to save a ticket comment to the server', err)
+      throw err
     } finally {
       try {
         setRawTicketComments(await api.fetchTicketComments())
@@ -654,7 +655,7 @@ export default function App() {
   // only `read` ever changes (see Notifications.tsx's markRead/markAllRead),
   // and nothing ever adds a new id from this screen, but this stays
   // general-shaped like every other handler here rather than a one-off.
-  const onNotificationsUpdate = (next: Notification[]) => {
+  const onNotificationsUpdate = async (next: Notification[]) => {
     const prevById = new Map(notifications.map(n => [n.id, n]))
     const created = next.filter(n => !prevById.has(n.id))
     const updated = next.filter(n => {
@@ -664,24 +665,23 @@ export default function App() {
 
     setRawNotifications(next.map(n => ({ id: n.id, createdAt: n.timestamp, ...notificationFieldsOf(n) } as api.RawNotification)))
 
-      ; (async () => {
-        try {
-          for (const n of updated) {
-            await api.updateNotification(n.id, { read: n.read })
-          }
-          if (created.length > 0) {
-            console.error('Notifications has no create endpoint wired up — new notification ids were ignored', created)
-          }
-        } catch (err) {
-          console.error('Failed to save a notification change to the server', err)
-        } finally {
-          try {
-            setRawNotifications(await api.fetchNotifications())
-          } catch {
-            // Offline/unreachable — stay on the optimistic state.
-          }
-        }
-      })()
+    try {
+      for (const n of updated) {
+        await api.updateNotification(n.id, { read: n.read })
+      }
+      if (created.length > 0) {
+        console.error('Notifications has no create endpoint wired up — new notification ids were ignored', created)
+      }
+    } catch (err) {
+      console.error('Failed to save a notification change to the server', err)
+      throw err
+    } finally {
+      try {
+        setRawNotifications(await api.fetchNotifications())
+      } catch {
+        // Offline/unreachable — stay on the optimistic state.
+      }
+    }
   }
 
   const navigate = (s: string, p?: Record<string, string>) => { setScreen(s); setParams(p || {}) }

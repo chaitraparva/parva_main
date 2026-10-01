@@ -55,7 +55,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (token) headers.Authorization = `Bearer ${token}`
 
-  const res = await fetch(path, { ...options, headers })
+  // cache: 'no-store' belt-and-braces alongside the service worker fix
+  // (public/sw.js) -- makes sure the browser's own HTTP cache never serves a
+  // stale response for live data either, on top of the service worker no
+  // longer intercepting /api/* at all.
+  const res = await fetch(path, { ...options, headers, cache: 'no-store' })
   const isJson = res.headers.get('content-type')?.includes('application/json')
   const data = isJson ? await res.json() : null
 
@@ -117,6 +121,29 @@ export async function fetchEmployeeById(id: string): Promise<Employee> {
 // HR-controlled field are deliberately not accepted there).
 export async function updateMyProfile(fields: { name?: string; phone?: string; location?: string; photoUrl?: string }): Promise<Employee> {
   const data = await request<{ employee: any }>('/api/employees/me', {
+    method: 'PATCH',
+    body: JSON.stringify(fields),
+  })
+  return mapApiEmployee(data.employee)
+}
+
+// HR/management-only edit of an employee's salary structure & payslip
+// personal-identity fields (see server/src/routes/employees.js's
+// HR_EDITABLE_FIELDS and src/components/SalaryStructureEditor.tsx). The
+// server enforces the hr/management-only restriction itself, not just this
+// function signature.
+export async function updateEmployeeDetails(id: string, fields: {
+  baseSalary?: number
+  hra?: number
+  conveyanceAllowance?: number
+  medicalAllowance?: number
+  otherAllowance?: number
+  dob?: string
+  gender?: string
+  aadharNumber?: string
+  panNumber?: string
+}): Promise<Employee> {
+  const data = await request<{ employee: any }>(`/api/employees/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: JSON.stringify(fields),
   })

@@ -283,6 +283,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
   const [showTicketForm, setShowTicketForm] = useState(false)
   const [ticketForm, setTicketForm] = useState({ title: '', type: 'IT Support' as TicketType, priority: 'Medium' as TicketPriority, description: '' })
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({})
+  const [commentErrors, setCommentErrors] = useState<Record<string, string>>({})
   const [ticketError, setTicketError] = useState('')
 
   async function submitLeave() {
@@ -349,10 +350,15 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
     const text = commentInputs[ticketId]?.trim()
     if (!text) return
     setCommentInputs(prev => ({ ...prev, [ticketId]: '' }))
+    setCommentErrors(prev => ({ ...prev, [ticketId]: '' }))
     try {
       await onAddTicketComment(ticketId, text)
     } catch (err) {
       console.error('Failed to post the comment', err)
+      // Put the text back so it isn't lost, and say so instead of letting
+      // it vanish with no explanation.
+      setCommentInputs(prev => ({ ...prev, [ticketId]: text }))
+      setCommentErrors(prev => ({ ...prev, [ticketId]: err instanceof Error ? err.message : 'Could not send that comment. Please try again.' }))
     }
   }
 
@@ -892,6 +898,11 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
                         <p className="mt-0.5">{c.text}</p>
                       </div>
                     ))}
+                  </div>
+                )}
+                {commentErrors[t.id] && (
+                  <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-xs font-medium">
+                    {commentErrors[t.id]}
                   </div>
                 )}
                 <div className="mt-3 flex gap-2">

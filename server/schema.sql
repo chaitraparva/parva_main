@@ -28,6 +28,20 @@ CREATE TABLE employees (
   photo_url      TEXT,
   company        TEXT NOT NULL DEFAULT '',
 
+  -- Salary structure & payslip personal-identity fields -- entered once by
+  -- HR via the Directory screen's "Salary & Personal Details" editor (see
+  -- server/sql/09_employee_salary_personal_fields_migration.sql). baseSalary
+  -- above is the Basic Salary; these are the rest of what makes up "Net
+  -- Basic Salary" on the payslip, plus the letterhead identity fields.
+  hra                  NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  conveyance_allowance NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  medical_allowance    NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  other_allowance      NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  dob                  TEXT NOT NULL DEFAULT '',
+  gender               TEXT NOT NULL DEFAULT '',
+  aadhar_number        TEXT NOT NULL DEFAULT '',
+  pan_number           TEXT NOT NULL DEFAULT '',
+
   -- Auth. password_hash is a bcrypt hash — never store plain text.
   -- login_roles is the explicit, direct source of truth for which portal(s)
   -- this person may sign in to — set once per person (e.g. by HR when the

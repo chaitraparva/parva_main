@@ -4,6 +4,7 @@ import type { JobTitle, Employee } from '../../types'
 import DocumentsPanel from '../../components/DocumentsPanel'
 import SalaryStructureEditor from '../../components/SalaryStructureEditor'
 import { sortByRosterOrder } from '../../lib/orgOrder'
+import * as api from '../../lib/api'
 
 const roleLabels: Record<JobTitle, string> = { admin: 'Super Admin', manager: 'Sales Manager', agent: 'CRM Agent', hr: 'HR Manager', finance: 'Finance Manager' }
 
@@ -16,6 +17,24 @@ interface Props {
   employees: Employee[]
   currentEmployeeId?: string
   onEmployeesUpdate?: (list: Employee[]) => void
+}
+
+// Actually persists the salary/personal-detail patch to the server (see
+// server/src/routes/employees.js's PATCH /:id and
+// server/sql/09_employee_salary_personal_fields_migration.sql) before
+// syncing it into local state — onEmployeesUpdate itself is just a local
+// list setter (see App.tsx), not something that saves on its own, so this
+// has to call the real API directly the same way Profile.tsx's own-profile
+// save does. Uses the server's returned row (not the raw patch) so local
+// state always reflects exactly what's actually stored.
+async function saveEmployeeDetails(
+  id: string,
+  patch: Partial<Employee>,
+  employees: Employee[],
+  onEmployeesUpdate: (list: Employee[]) => void,
+) {
+  const updated = await api.updateEmployeeDetails(id, patch)
+  onEmployeesUpdate(employees.map(e => e.id === id ? updated : e))
 }
 
 export default function Directory({ employees, currentEmployeeId, onEmployeesUpdate }: Props) {
@@ -226,7 +245,7 @@ export default function Directory({ employees, currentEmployeeId, onEmployeesUpd
             <div className="p-5 border-b border-border">
               <SalaryStructureEditor
                 employee={selectedEmp}
-                onSave={patch => onEmployeesUpdate(employees.map(e => e.id === selectedEmp.id ? { ...e, ...patch } : e))}
+                onSave={patch => saveEmployeeDetails(selectedEmp.id, patch, employees, onEmployeesUpdate)}
               />
             </div>
           )}

@@ -61,6 +61,7 @@ export default function TicketsHR({ tickets: ticketsProp, onTicketsUpdate, onAdd
   const [search, setSearch] = useState('')
   const [reply, setReply] = useState('')
   const [sendingComment, setSendingComment] = useState(false)
+  const [commentError, setCommentError] = useState('')
 
   const filtered = tickets.filter(t => {
     const matchStatus = filterStatus === 'all' || t.status === filterStatus
@@ -82,11 +83,16 @@ export default function TicketsHR({ tickets: ticketsProp, onTicketsUpdate, onAdd
     if (!reply.trim() || !selected) return
     const text = reply.trim()
     setReply('')
+    setCommentError('')
     setSendingComment(true)
     try {
       await onAddTicketComment(selected.id, text)
     } catch (err) {
       console.error('Failed to post the comment', err)
+      // Put the text back so it isn't lost, and say so instead of letting
+      // it vanish with no explanation.
+      setReply(text)
+      setCommentError(err instanceof Error ? err.message : 'Could not send that reply. Please try again.')
     } finally {
       setSendingComment(false)
     }
@@ -282,6 +288,11 @@ export default function TicketsHR({ tickets: ticketsProp, onTicketsUpdate, onAdd
             {/* Reply box */}
             {selected.status !== 'Closed' && (
               <div className="p-4 border-t border-border">
+                {commentError && (
+                  <div className="mb-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-xs font-medium">
+                    {commentError}
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <input value={reply} onChange={e => setReply(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendComment()}
