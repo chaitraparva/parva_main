@@ -410,8 +410,15 @@ export default function App() {
         }
       })()
   }
-  // Same generic diff-and-sync approach as onPayrollUpdate.
-  const onAttendanceUpdate = (next: AttendanceRecord[]) => {
+  // Same generic diff-and-sync approach as onPayrollUpdate, EXCEPT this one
+  // is async and re-throws its error instead of only console.error-ing it.
+  // It used to swallow the error silently like onPayrollUpdate still does —
+  // that meant a failed save (e.g. the self-service "Mark Attendance"
+  // button) showed a false "Today's attendance saved." success message that
+  // then silently reverted on the next refetch, with no way for the person
+  // to know anything had gone wrong. Callers now await this and can show the
+  // real error (see MyPortal.tsx/ManagerPortal.tsx's markMyAttendance).
+  const onAttendanceUpdate = async (next: AttendanceRecord[]) => {
     const prevById = new Map(attendance.map(a => [a.id, a]))
     const created = next.filter(a => !prevById.has(a.id))
     const updated = next.filter(a => {
@@ -421,24 +428,23 @@ export default function App() {
 
     setRawAttendance(next.map(a => ({ id: a.id, ...attendanceFieldsOf(a) } as api.RawAttendanceRecord)))
 
-      ; (async () => {
-        try {
-          for (const a of created) {
-            await api.createAttendanceRecord(attendanceFieldsOf(a))
-          }
-          for (const a of updated) {
-            await api.updateAttendanceRecord(a.id, attendanceFieldsOf(a))
-          }
-        } catch (err) {
-          console.error('Failed to save an attendance record change to the server', err)
-        } finally {
-          try {
-            setRawAttendance(await api.fetchAttendanceRecords())
-          } catch {
-            // Offline/unreachable — stay on the optimistic state.
-          }
-        }
-      })()
+    try {
+      for (const a of created) {
+        await api.createAttendanceRecord(attendanceFieldsOf(a))
+      }
+      for (const a of updated) {
+        await api.updateAttendanceRecord(a.id, attendanceFieldsOf(a))
+      }
+    } catch (err) {
+      console.error('Failed to save an attendance record change to the server', err)
+      throw err
+    } finally {
+      try {
+        setRawAttendance(await api.fetchAttendanceRecords())
+      } catch {
+        // Offline/unreachable — stay on the optimistic state.
+      }
+    }
   }
   // Timesheets don't follow the same "diff a whole array" shape as the
   // modules above — MyTimesheet.tsx saves exactly one day's entry at a time.

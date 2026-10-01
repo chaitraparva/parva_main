@@ -43,7 +43,7 @@ interface Props {
   employeeId: string
   employees: Employee[]
   attendance: AttendanceRecord[]
-  onAttendanceUpdate: (next: AttendanceRecord[]) => void
+  onAttendanceUpdate: (next: AttendanceRecord[]) => Promise<void>
   payroll: PayrollRecord[]
   onPayrollUpdate: (next: PayrollRecord[]) => void
 }
@@ -128,23 +128,35 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
       : { checkIn: '09:00', checkOut: '18:00', status: 'present' as AttendanceRecord['status'] }
   })
   const [selfAttFlash, setSelfAttFlash] = useState(false)
+  const [selfAttError, setSelfAttError] = useState('')
+  const [selfAttSaving, setSelfAttSaving] = useState(false)
 
-  function markMyAttendance() {
+  async function markMyAttendance() {
     const existing = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
-    if (existing) {
-      onAttendanceUpdate(attendanceRecords.map(r => r.id === existing.id ? { ...r, ...selfAttForm } : r))
-    } else {
-      const newRec: AttendanceRecord = {
-        id: `att-${Date.now()}`,
-        employeeId,
-        employeeName: meName,
-        date: todayIso,
-        ...selfAttForm,
+    setSelfAttError('')
+    setSelfAttSaving(true)
+    try {
+      if (existing) {
+        await onAttendanceUpdate(attendanceRecords.map(r => r.id === existing.id ? { ...r, ...selfAttForm } : r))
+      } else {
+        const newRec: AttendanceRecord = {
+          id: `att-${Date.now()}`,
+          employeeId,
+          employeeName: meName,
+          date: todayIso,
+          ...selfAttForm,
+        }
+        await onAttendanceUpdate([...attendanceRecords, newRec])
       }
-      onAttendanceUpdate([...attendanceRecords, newRec])
+      setSelfAttFlash(true)
+      setTimeout(() => setSelfAttFlash(false), 3000)
+    } catch (err) {
+      // Show the real server error instead of a false "saved" message that
+      // silently reverts — see the comment on onAttendanceUpdate in App.tsx.
+      setSelfAttError(err instanceof Error ? err.message : 'Something went wrong while saving. Please try again.')
+    } finally {
+      setSelfAttSaving(false)
     }
-    setSelfAttFlash(true)
-    setTimeout(() => setSelfAttFlash(false), 3000)
   }
 
   // Team expenses — read-only here. A manager can see their team's claims
@@ -414,6 +426,11 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
               Today's attendance saved.
             </div>
           )}
+          {selfAttError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {selfAttError}
+            </div>
+          )}
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
             <h2 className="font-semibold text-base mb-1" style={{ color: navy }}>Mark My Attendance</h2>
             <p className="text-xs text-muted-foreground mb-4">
@@ -444,10 +461,10 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
                   className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
               </div>
               <div className="flex items-end">
-                <button onClick={markMyAttendance}
-                  className="w-full px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90"
+                <button onClick={markMyAttendance} disabled={selfAttSaving}
+                  className="w-full px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
                   style={{ background: navy }}>
-                  {myTodayAttendance ? 'Update' : 'Mark Attendance'}
+                  {selfAttSaving ? 'Saving…' : myTodayAttendance ? 'Update' : 'Mark Attendance'}
                 </button>
               </div>
             </div>

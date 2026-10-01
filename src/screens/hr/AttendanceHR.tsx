@@ -29,7 +29,7 @@ const HEATMAP_COLORS = [
 interface AttendanceHRProps {
   employees: Employee[]
   attendance: AttendanceRecord[]
-  onAttendanceUpdate: (next: AttendanceRecord[]) => void
+  onAttendanceUpdate: (next: AttendanceRecord[]) => Promise<void>
 }
 
 export default function AttendanceHR({ employees, attendance, onAttendanceUpdate }: AttendanceHRProps) {
@@ -39,7 +39,11 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
   const setRecords = (updater: AttendanceRecord[] | ((prev: AttendanceRecord[]) => AttendanceRecord[])) => {
     setRecordsLocal(prev => {
       const next = typeof updater === 'function' ? (updater as (prev: AttendanceRecord[]) => AttendanceRecord[])(prev) : updater
-      onAttendanceUpdate(next)
+      // onAttendanceUpdate now rejects on a failed save (see App.tsx) instead
+      // of only logging it — this screen doesn't yet surface that to the UI,
+      // so just catch it here to avoid an unhandled-rejection console error;
+      // the state still reverts correctly via the refetch in App.tsx either way.
+      onAttendanceUpdate(next).catch(() => { })
       return next
     })
   }
