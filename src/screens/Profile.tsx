@@ -73,6 +73,7 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
   }
 
   const [saving, setSaving] = useState(false)
+  const [removingPhoto, setRemovingPhoto] = useState(false)
 
   async function handleSave() {
     if (!firstName.trim() || !lastName.trim()) {
@@ -111,6 +112,29 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
     }
   }
 
+  async function handleRemovePhoto() {
+    if (!me) return
+    setError('')
+    if (photoFile) {
+      // A new photo was picked but never saved yet — just discard that local
+      // preview and fall back to whatever photo (if any) is actually saved.
+      setPhotoFile(null)
+      setPhotoUrl(me.photoUrl)
+      return
+    }
+    if (!me.photoUrl) return
+    setRemovingPhoto(true)
+    try {
+      const updated = await api.updateMyProfile({ photoUrl: '' })
+      onEmployeesUpdate(employees.map(e => e.id === me.id ? updated : e))
+      setPhotoUrl(updated.photoUrl)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove your photo. Please try again.')
+    } finally {
+      setRemovingPhoto(false)
+    }
+  }
+
   return (
     <div className="max-w-3xl space-y-5">
       <div>
@@ -145,6 +169,17 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
             >
               <Camera size={16} />
             </button>
+            {photoUrl && (
+              <button
+                onClick={handleRemovePhoto}
+                disabled={removingPhoto}
+                className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow-md border-2 border-white bg-white text-red-600 transition-transform hover:scale-105 hover:bg-red-50 disabled:opacity-60"
+                aria-label={photoFile ? 'Cancel photo' : 'Remove photo'}
+                title={photoFile ? 'Cancel photo' : 'Remove photo'}
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
 
           <div className="flex-1 w-full space-y-4">
