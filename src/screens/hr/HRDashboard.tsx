@@ -32,9 +32,19 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
   const urgentTickets = tickets.filter(t => t.priority === 'Urgent' && t.status !== 'Resolved' && t.status !== 'Closed')
   const activeOnboarding = onboarding.filter(c => c.onboardingProgress < 100).length
   const activeExits = exits.filter(e => e.status !== 'Completed').length
+  // Same exclusion list as AttendanceHR.tsx -- these IDs aren't tracked for
+  // attendance at all, so they're left out of both the numerator and the
+  // denominator here too, for the same reason that screen was fixed.
+  const ATTENDANCE_EXCLUDED_IDS = ['DF230001', 'DF230002', 'PA230045'] // Neelesh H P, Akshita Raturi, Chaitra
+  const trackedEmployees = employees.filter(e => !ATTENDANCE_EXCLUDED_IDS.includes(e.id))
   const todayIso = new Date().toISOString().slice(0, 10)
-  const todayAttendance = attendance.filter(a => a.date === todayIso)
+  const todayAttendance = attendance.filter(a => a.date === todayIso && !ATTENDANCE_EXCLUDED_IDS.includes(a.employeeId))
   const presentToday = todayAttendance.filter(a => a.status === 'present').length
+  // Percentages/bar widths below are out of the full tracked headcount for
+  // today, not however many attendance records happen to exist yet --
+  // otherwise 2 people marked present out of 50 employees shows as "100%".
+  const attendancePercentBase = trackedEmployees.length
+  const notMarkedToday = Math.max(0, trackedEmployees.length - todayAttendance.length)
 
   const QUICK_ACTIONS = [
     { label: 'Employee Directory', screen: 'directory', icon: Users, color: navy, count: employees.length, sub: 'employees' },
@@ -141,6 +151,7 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
               { label: 'Late', count: todayAttendance.filter(a => a.status === 'late').length, color: '#F59E0B', bg: '#FFFBEB' },
               { label: 'Absent', count: todayAttendance.filter(a => a.status === 'absent').length, color: '#EF4444', bg: '#FEF2F2' },
               { label: 'Half Day', count: todayAttendance.filter(a => a.status === 'half-day').length, color: '#8B5CF6', bg: '#F5F3FF' },
+              { label: 'Not Marked', count: notMarkedToday, color: '#6B7280', bg: '#F3F4F6' },
             ].map(s => (
               <div key={s.label} className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: s.bg }}>
@@ -151,7 +162,7 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
                     <span className="text-xs font-medium text-foreground">{s.label}</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${(s.count / (todayAttendance.length || 1)) * 100}%`, backgroundColor: s.color }} />
+                    <div className="h-full rounded-full" style={{ width: `${(s.count / (attendancePercentBase || 1)) * 100}%`, backgroundColor: s.color }} />
                   </div>
                 </div>
               </div>
