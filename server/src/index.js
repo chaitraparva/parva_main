@@ -10,6 +10,7 @@ import adminRouter from './routes/admin.js'
 import employeesRouter from './routes/employees.js'
 import documentsRouter from './routes/documents.js'
 import expenseReceiptsRouter from './routes/expense-receipts.js'
+import profilePhotoRouter from './routes/profile-photo.js'
 import ticketCommentsRouter from './routes/ticket-comments.js'
 import {
   leaveRequestsRouter,
@@ -60,6 +61,7 @@ app.use('/api/admin', adminRouter)
 app.use('/api/employees', employeesRouter)
 app.use('/api/documents', documentsRouter)
 app.use('/api/expense-receipts', expenseReceiptsRouter)
+app.use('/api/profile-photo', profilePhotoRouter)
 app.use('/api/leave-requests', leaveRequestsRouter)
 app.use('/api/payroll-records', payrollRecordsRouter)
 app.use('/api/attendance-records', attendanceRouter)

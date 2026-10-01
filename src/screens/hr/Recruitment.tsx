@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { JobRequisition, Candidate, CandidateStage, RequisitionStatus, Employee } from '../../types'
-import { Briefcase, Users, Send, Clock, Check, X, Plus, Sparkles, ShieldCheck, MessageSquare, BarChart2, IndianRupee } from 'lucide-react'
+import { Briefcase, Users, Send, Clock, Check, X, Plus, Sparkles, ShieldCheck, MessageSquare, BarChart2, IndianRupee, Pencil, Trash2 } from 'lucide-react'
 
 const EMPLOYMENT_TYPES = ['Full-time', 'Contract', 'Intern'] as const
 const NEW_REQ_DEFAULT = {
@@ -55,12 +55,13 @@ function scoreColor(score: number) {
 interface RecruitmentProps {
   requisitions: JobRequisition[]
   onRequisitionsUpdate: (next: JobRequisition[]) => void
+  onDeleteRequisition?: (id: string) => Promise<void>
   candidates: Candidate[]
   currentEmployee?: Employee
   employees: Employee[]
 }
 
-export default function Recruitment({ requisitions, onRequisitionsUpdate, candidates, currentEmployee, employees }: RecruitmentProps) {
+export default function Recruitment({ requisitions, onRequisitionsUpdate, onDeleteRequisition, candidates, currentEmployee, employees }: RecruitmentProps) {
   const [tab, setTab] = useState<'requisitions' | 'pipeline'>('requisitions')
   const [reqs, setReqsLocal] = useState<JobRequisition[]>(requisitions)
   useEffect(() => { setReqsLocal(requisitions) }, [requisitions])
@@ -79,6 +80,9 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, candid
   const cands = candidates
   const [showAddForm, setShowAddForm] = useState(false)
   const [newReq, setNewReq] = useState(NEW_REQ_DEFAULT)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // job_requisitions.requested_by/approved_by are foreign keys to
   // employees(id) — they must store a real employee id, never a display
@@ -93,27 +97,94 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, candid
     setReqs(prev => prev.map(r => r.id === id ? { ...r, status, approvedBy: status === 'Approved' ? currentEmployee?.id : r.approvedBy } : r))
   }
 
-  const addRequisition = () => {
-    if (!newReq.title || !newReq.department || !newReq.location || !newReq.startDate || !newReq.targetCloseDate || !newReq.ctcRange) return
-    const req: JobRequisition = {
-      id: `req-${Date.now()}`,
-      title: newReq.title,
-      department: newReq.department,
-      team: newReq.team || newReq.department,
-      openings: Math.max(1, parseInt(newReq.openings) || 1),
-      location: newReq.location,
-      employmentType: newReq.employmentType,
-      status: 'Pending Approval',
-      requestedBy: currentEmployee?.id || '',
-      channels: newReq.channels.split(',').map(c => c.trim()).filter(Boolean),
-      applicants: 0,
-      startDate: newReq.startDate,
-      targetCloseDate: newReq.targetCloseDate,
-      ctcRange: newReq.ctcRange,
-    }
-    setReqs(prev => [req, ...prev])
-    setNewReq(NEW_REQ_DEFAULT)
+  // Pre-fills the form from an existing row and flips it into edit mode —
+  // reuses the same form/fields as "New Requisition" rather than a second
+  // copy of every input.
+  const startEdit = (r: JobRequisition) => {
+    setEditingId(r.id)
+    setNewReq({
+      title: r.title,
+      department: r.department,
+      team: r.team,
+      openings: String(r.openings),
+      location: r.location,
+      employmentType: r.employmentType,
+      startDate: r.startDate,
+      targetCloseDate: r.targetCloseDate,
+      ctcRange: r.ctcRange,
+      channels: r.channels.join(', '),
+    })
+    setShowAddForm(true)
+  }
+
+  const cancelForm = () => {
     setShowAddForm(false)
+    setEditingId(null)
+    setNewReq(NEW_REQ_DEFAULT)
+  }
+
+  // Creates a new requisition, or — when editingId is set — patches the
+  // existing row in place instead, via the same setReqs() diff-and-sync
+  // path onRequisitionsUpdate already uses for every other field change
+  // (e.g. setReqStatus below), so an edit reaches the server the same way.
+  const saveRequisition = () => {
+    if (!newReq.title || !newReq.department || !newReq.location || !newReq.startDate || !newReq.targetCloseDate || !newReq.ctcRange) return
+    const openings = Math.max(1, parseInt(newReq.openings) || 1)
+    const channels = newReq.channels.split(',').map(c => c.trim()).filter(Boolean)
+    if (editingId) {
+      setReqs(prev => prev.map(r => r.id === editingId ? {
+        ...r,
+        title: newReq.title,
+        department: newReq.department,
+        team: newReq.team || newReq.department,
+        openings,
+        location: newReq.location,
+        employmentType: newReq.employmentType,
+        channels,
+        startDate: newReq.startDate,
+        targetCloseDate: newReq.targetCloseDate,
+        ctcRange: newReq.ctcRange,
+      } : r))
+    } else {
+      const req: JobRequisition = {
+        id: `req-${Date.now()}`,
+        title: newReq.title,
+        department: newReq.department,
+        team: newReq.team || newReq.department,
+        openings,
+        location: newReq.location,
+        employmentType: newReq.employmentType,
+        status: 'Pending Approval',
+        requestedBy: currentEmployee?.id || '',
+        channels,
+        applicants: 0,
+        startDate: newReq.startDate,
+        targetCloseDate: newReq.targetCloseDate,
+        ctcRange: newReq.ctcRange,
+      }
+      setReqs(prev => [req, ...prev])
+    }
+    cancelForm()
+  }
+
+  // Removes a requisition outright (HR/management only — the server checks
+  // this too, see server/src/routes/resources.js). Unlike setReqStatus
+  // above this doesn't go through onRequisitionsUpdate's create/update diff
+  // at all (that path has no concept of a delete), so it calls the
+  // dedicated onDeleteRequisition prop directly and surfaces a real error
+  // if it fails rather than silently doing nothing.
+  const handleDeleteRequisition = async (id: string) => {
+    if (!onDeleteRequisition) return
+    if (!window.confirm('Delete this job requisition? This cannot be undone.')) return
+    setDeleteError(null)
+    setDeletingId(id)
+    try {
+      await onDeleteRequisition(id)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Could not delete this requisition. Please try again.')
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   const openRoles = reqs.filter(r => r.status === 'Approved').length
@@ -130,7 +201,7 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, candid
           <h2 className="font-serif text-2xl font-semibold text-foreground">Recruitment Management</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Job requisitions, candidate pipeline, and hiring approvals</p>
         </div>
-        <button onClick={() => setShowAddForm(v => !v)} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all" style={{ backgroundColor: navy, color: '#FAF8F5' }}>
+        <button onClick={() => (showAddForm ? cancelForm() : setShowAddForm(true))} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all" style={{ backgroundColor: navy, color: '#FAF8F5' }}>
           <Plus size={14} />
           {showAddForm ? 'Cancel' : 'New Requisition'}
         </button>
@@ -139,7 +210,7 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, candid
       {/* New requisition form */}
       {showAddForm && (
         <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-          <h3 className="font-serif text-lg font-semibold text-foreground mb-4">New Job Requisition</h3>
+          <h3 className="font-serif text-lg font-semibold text-foreground mb-4">{editingId ? 'Edit Job Requisition' : 'New Job Requisition'}</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-muted-foreground mb-1">Role Title *</label>
@@ -201,12 +272,12 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, candid
             </div>
           </div>
           <div className="flex gap-3">
-            <button onClick={addRequisition}
+            <button onClick={saveRequisition}
               className="px-5 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
               style={{ backgroundColor: gold, color: navy }}>
-              <Check size={14} className="inline mr-1.5" />Submit Requisition
+              <Check size={14} className="inline mr-1.5" />{editingId ? 'Save Changes' : 'Submit Requisition'}
             </button>
-            <button onClick={() => setShowAddForm(false)}
+            <button onClick={cancelForm}
               className="px-5 py-2 rounded-lg text-sm font-medium border border-border text-muted-foreground hover:bg-muted transition-all">
               Cancel
             </button>
@@ -244,7 +315,13 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, candid
       </div>
 
       {tab === 'requisitions' ? (
-        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="space-y-3">
+          {deleteError && (
+            <div className="px-4 py-2.5 rounded-lg text-sm" style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+              {deleteError}
+            </div>
+          )}
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px]">
               <thead>
@@ -283,28 +360,41 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, candid
                         {r.approvedBy && <p className="text-[10px] text-muted-foreground mt-0.5">by {employeeName(r.approvedBy)}</p>}
                       </td>
                       <td className="px-5 py-4">
-                        {r.status === 'Pending Approval' ? (
-                          <div className="flex items-center gap-1.5">
-                            <button onClick={() => setReqStatus(r.id, 'Approved')}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
-                              style={{ backgroundColor: '#ECFDF5', color: '#059669' }}>
-                              <Check size={11} /> Approve
-                            </button>
-                            <button onClick={() => setReqStatus(r.id, 'On Hold')}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all"
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {r.status === 'Pending Approval' && (
+                            <>
+                              <button onClick={() => setReqStatus(r.id, 'Approved')}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                                style={{ backgroundColor: '#ECFDF5', color: '#059669' }}>
+                                <Check size={11} /> Approve
+                              </button>
+                              <button onClick={() => setReqStatus(r.id, 'On Hold')}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all"
+                                style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+                                <X size={11} /> Hold
+                              </button>
+                            </>
+                          )}
+                          <button onClick={() => startEdit(r)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                            style={{ backgroundColor: '#EEF2FF', color: '#4338CA' }}>
+                            <Pencil size={11} /> Edit
+                          </button>
+                          {onDeleteRequisition && (
+                            <button onClick={() => handleDeleteRequisition(r.id)} disabled={deletingId === r.id}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
                               style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
-                              <X size={11} /> Hold
+                              <Trash2 size={11} /> {deletingId === r.id ? 'Deleting…' : 'Delete'}
                             </button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
+          </div>
           </div>
         </div>
       ) : (

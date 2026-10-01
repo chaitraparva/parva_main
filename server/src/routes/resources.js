@@ -114,6 +114,11 @@ export const jobRequisitionsRouter = crudRouter({
     'targetCloseDate', 'ctcRange',
   ],
   writeRoles: ['hr', 'management'],
+  // HR/management can remove a requisition outright (e.g. opened by
+  // mistake, duplicate) — unlike expense claims/timesheet this isn't a
+  // self-delete (an employee never owns a requisition), so this is a
+  // straight role check with no ownership/status restriction.
+  deleteRoles: ['hr', 'management'],
 })
 
 export const candidatesRouter = crudRouter({

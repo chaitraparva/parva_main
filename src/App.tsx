@@ -607,6 +607,22 @@ export default function App() {
         }
       })()
   }
+  // Deletes a job requisition outright — HR/management only, enforced
+  // server-side via deleteRoles (see server/src/routes/resources.js), not
+  // just hidden in the UI. Same propagate-the-error, refetch-in-finally
+  // shape as onDeleteTimesheetEntry above, so Recruitment.tsx can surface a
+  // real error (e.g. a 403) instead of silently doing nothing.
+  const onDeleteRequisition = async (id: string) => {
+    try {
+      await api.deleteJobRequisition(id)
+    } finally {
+      try {
+        setRawRequisitions(await api.fetchJobRequisitions())
+      } catch {
+        // Offline/unreachable — stay on whatever's already shown.
+      }
+    }
+  }
   // Same generic diff-and-sync approach as onRequisitionsUpdate above —
   // onboarding_candidates.id is a client-supplied TEXT primary key,
   // so create() sends it explicitly. Every field OnboardingHR.tsx touches
@@ -1266,7 +1282,7 @@ export default function App() {
           />
         )
       case 'recruitment':
-        return <Recruitment requisitions={requisitions} onRequisitionsUpdate={onRequisitionsUpdate} candidates={candidates} currentEmployee={currentEmployee} employees={employees} />
+        return <Recruitment requisitions={requisitions} onRequisitionsUpdate={onRequisitionsUpdate} onDeleteRequisition={onDeleteRequisition} candidates={candidates} currentEmployee={currentEmployee} employees={employees} />
       case 'performance':
         return <Performance goals={goals} reviews={reviews} />
       case 'directory':

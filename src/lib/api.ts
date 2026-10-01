@@ -389,6 +389,20 @@ export async function uploadExpenseReceipt(claimId: string, file: File): Promise
   })
 }
 
+// ---- Profile photo (real backend storage — Supabase Storage) ----
+// Uploads to a PUBLIC bucket and returns a plain public URL (see
+// server/src/routes/profile-photo.js for why) — the caller still has to
+// pass that URL into updateMyProfile() itself to actually save it on the
+// employee row; this only handles getting the file into Storage.
+export async function uploadProfilePhoto(file: File): Promise<string> {
+  const dataBase64 = await fileToBase64(file)
+  const data = await request<{ photoUrl: string }>('/api/profile-photo', {
+    method: 'POST',
+    body: JSON.stringify({ filename: file.name, contentType: file.type, dataBase64 }),
+  })
+  return data.photoUrl
+}
+
 // Pass downloadFilename to get a link that forces a browser download with
 // that filename (via Supabase Storage's own `download` signed-URL option)
 // instead of one meant just for inline viewing.
@@ -513,6 +527,12 @@ export async function updateJobRequisition(id: string, patch: Partial<Omit<RawJo
     body: JSON.stringify(patch),
   })
   return data.job_requisition
+}
+
+// HR/management only — the server enforces this via deleteRoles (see
+// server/src/routes/resources.js), regardless of what the UI shows.
+export async function deleteJobRequisition(id: string): Promise<void> {
+  await request<null>(`/api/job-requisitions/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 // Candidates are read-only from the frontend today (Recruitment.tsx never

@@ -40,6 +40,7 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
   const [phone, setPhone] = useState(me?.phone || '')
   const [location, setLocation] = useState(me?.location || '')
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(me?.photoUrl)
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [openPayslip, setOpenPayslip] = useState<PayrollRecord | null>(null)
@@ -65,6 +66,7 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
     const reader = new FileReader()
     reader.onload = () => {
       setPhotoUrl(reader.result as string)
+      setPhotoFile(file)
       setError('')
     }
     reader.readAsDataURL(file)
@@ -82,17 +84,24 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
     setSaving(true)
     setError('')
     try {
-      // Persists to the real backend — name, phone and location only.
-      // email is deliberately never sent — it's the registered login
-      // identifier, set by HR and never editable by the employee (the
-      // server rejects it too, this just keeps the request honest).
-      // photoUrl isn't sent here yet: it can be a large data: URL from the
-      // file picker below, and photo storage needs its own upload-to-
-      // Supabase-Storage flow (like the Documents panel already has)
-      // rather than being stuffed into a text column — so for now the
-      // photo preview is local to this browser only, same as before.
-      const updated = await api.updateMyProfile({ name, phone: phone.trim(), location: location.trim() })
-      onEmployeesUpdate(employees.map(e => e.id === me.id ? { ...updated, photoUrl } : e))
+      // If a new photo was picked, upload it to real Storage first and get
+      // back a permanent public URL — only then is it included in the
+      // profile update below. email is deliberately never sent — it's the
+      // registered login identifier, set by HR and never editable by the
+      // employee (the server rejects it too, this just keeps the request
+      // honest).
+      const uploadedPhotoUrl = photoFile ? await api.uploadProfilePhoto(photoFile) : undefined
+      const updated = await api.updateMyProfile({
+        name, phone: phone.trim(), location: location.trim(),
+        ...(uploadedPhotoUrl ? { photoUrl: uploadedPhotoUrl } : {}),
+      })
+      // `updated` already carries the real stored photoUrl either way (new
+      // or unchanged) — this is what every other screen that reads
+      // employees.photoUrl (Org Chart, Directory, ...) will now see too,
+      // once they fetch employees again, not just this browser tab.
+      onEmployeesUpdate(employees.map(e => e.id === me.id ? updated : e))
+      setPhotoUrl(updated.photoUrl)
+      setPhotoFile(null)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
