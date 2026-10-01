@@ -47,11 +47,10 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
       return next
     })
   }
-  // Defaults to "All dates" / today rather than a fixed demo date — this is
-  // live data now, and a hardcoded 2024 date would hide everything by
-  // default.
+  // Defaults to TODAY (not "All dates") so the percentages below are
+  // meaningful on load — see percentBase/notMarked just below for why.
   const todayIso = new Date().toISOString().slice(0, 10)
-  const [dateFilter, setDateFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState(todayIso)
   const [showMarkForm, setShowMarkForm] = useState(false)
   const [markForm, setMarkForm] = useState({ employeeName: '', date: todayIso, checkIn: '09:00', checkOut: '18:00', status: 'present' as AttStatus })
 
@@ -63,6 +62,14 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
     late: filtered.filter(r => r.status === 'late').length,
     halfDay: filtered.filter(r => r.status === 'half-day').length,
   }
+  // A specific date picked -> percentages are out of everyone who should be
+  // tracked that day (attendance_records has a UNIQUE(employee_id, date)
+  // constraint, so each employee contributes at most one record here).
+  // "All dates" -> there's no single honest headcount to divide by (it
+  // spans many days), so this falls back to the old record-count behavior
+  // and the "Not Marked" card is hidden rather than showing a misleading 0.
+  const percentBase = dateFilter ? trackedEmployees.length : filtered.length
+  const notMarked = dateFilter ? Math.max(0, trackedEmployees.length - filtered.length) : null
 
   const datesAvailable = [...new Set(records.map(r => r.date))].sort().reverse()
 
@@ -175,13 +182,18 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
         </div>
       )}
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI cards — percentages are out of the full tracked headcount for
+          the selected day, not just however many records exist, so this
+          can never show "100%" while most of the team hasn't marked
+          attendance. "Not Marked" (only shown for a specific date, not
+          "All dates") makes that gap visible instead of hiding it. */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           { title: 'Present', value: summary.present, bg: statusStyle.present.bg, text: statusStyle.present.text },
           { title: 'Absent', value: summary.absent, bg: statusStyle.absent.bg, text: statusStyle.absent.text },
           { title: 'Late', value: summary.late, bg: statusStyle.late.bg, text: statusStyle.late.text },
           { title: 'Half Day', value: summary.halfDay, bg: statusStyle['half-day'].bg, text: statusStyle['half-day'].text },
+          ...(notMarked !== null ? [{ title: 'Not Marked', value: notMarked, bg: '#F3F4F6', text: '#6B7280' }] : []),
         ].map(s => (
           <div key={s.title} className="bg-card rounded-xl border border-border shadow-sm p-5 flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl flex items-center justify-center font-serif text-2xl font-bold"
@@ -191,7 +203,7 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
             <div>
               <p className="text-sm font-semibold text-foreground">{s.title}</p>
               <p className="text-xs text-muted-foreground">
-                {filtered.length > 0 ? `${Math.round((s.value / filtered.length) * 100)}%` : '—'}
+                {percentBase > 0 ? `${Math.round((s.value / percentBase) * 100)}%` : '—'}
               </p>
             </div>
           </div>
