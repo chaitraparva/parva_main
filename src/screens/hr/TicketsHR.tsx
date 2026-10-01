@@ -26,7 +26,7 @@ const NEXT_STATUS: Partial<Record<TicketStatus, TicketStatus>> = {
 
 interface TicketsHRProps {
   tickets: EmployeeTicket[]
-  onTicketsUpdate: (next: EmployeeTicket[]) => void
+  onTicketsUpdate: (next: EmployeeTicket[]) => Promise<void>
   onAddTicketComment: (ticketId: string, text: string) => Promise<void>
   currentEmployee?: Employee
 }
@@ -34,10 +34,14 @@ interface TicketsHRProps {
 export default function TicketsHR({ tickets: ticketsProp, onTicketsUpdate, onAddTicketComment, currentEmployee }: TicketsHRProps) {
   const [tickets, setTicketsLocal] = useState<EmployeeTicket[]>(ticketsProp)
   useEffect(() => { setTicketsLocal(ticketsProp) }, [ticketsProp])
+  const [saveError, setSaveError] = useState('')
   const setTickets = (updater: EmployeeTicket[] | ((prev: EmployeeTicket[]) => EmployeeTicket[])) => {
+    setSaveError('')
     setTicketsLocal(prev => {
       const next = typeof updater === 'function' ? (updater as (prev: EmployeeTicket[]) => EmployeeTicket[])(prev) : updater
-      onTicketsUpdate(next)
+      onTicketsUpdate(next).catch(err => {
+        setSaveError(err instanceof Error ? err.message : 'Could not save that ticket change. Please try again.')
+      })
       return next
     })
   }
@@ -103,6 +107,12 @@ export default function TicketsHR({ tickets: ticketsProp, onTicketsUpdate, onAdd
           <p className="text-sm text-muted-foreground mt-0.5">Respond to and resolve support requests from employees</p>
         </div>
       </div>
+
+      {saveError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+          {saveError}
+        </div>
+      )}
 
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

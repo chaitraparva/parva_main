@@ -45,7 +45,7 @@ function StatusBadge({ status }: { status: string }) {
 
 interface Props {
   leaves: LeaveRequest[]
-  onLeaveUpdate: (l: LeaveRequest[]) => void
+  onLeaveUpdate: (l: LeaveRequest[]) => Promise<void>
   expenses: ExpenseClaim[]
   onExpensesUpdate: (e: ExpenseClaim[]) => void
   onExpensesRefetch: () => Promise<void>
@@ -54,7 +54,7 @@ interface Props {
   attendance: AttendanceRecord[]
   onAttendanceUpdate: (next: AttendanceRecord[]) => Promise<void>
   tickets: EmployeeTicket[]
-  onTicketsUpdate: (next: EmployeeTicket[]) => void
+  onTicketsUpdate: (next: EmployeeTicket[]) => Promise<void>
   onAddTicketComment: (ticketId: string, text: string) => Promise<void>
 }
 
@@ -75,6 +75,7 @@ function blankRow(): DraftRow {
 export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate: _onExpensesUpdate, onExpensesRefetch, employeeId, employees, attendance: attendanceRecords, onAttendanceUpdate, tickets, onTicketsUpdate, onAddTicketComment }: Props) {
   const [tab, setTab] = useState<Tab>('leave')
   const [leaveFlash, setLeaveFlash] = useState(false)
+  const [leaveError, setLeaveError] = useState('')
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '' })
 
   const myLeaves = leaves.filter(l => l.employeeId === employeeId)
@@ -282,9 +283,11 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
   const [showTicketForm, setShowTicketForm] = useState(false)
   const [ticketForm, setTicketForm] = useState({ title: '', type: 'IT Support' as TicketType, priority: 'Medium' as TicketPriority, description: '' })
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({})
+  const [ticketError, setTicketError] = useState('')
 
-  function submitLeave() {
+  async function submitLeave() {
     if (!leaveForm.startDate || !leaveForm.endDate || !leaveForm.reason) return
+    setLeaveError('')
     const start = new Date(leaveForm.startDate)
     const end = new Date(leaveForm.endDate)
     const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
@@ -303,14 +306,19 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
       submittedByRole: 'crm',
       pendingWith: 'manager',
     }
-    onLeaveUpdate([...leaves, newLeave])
-    setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
-    setLeaveFlash(true)
-    setTimeout(() => setLeaveFlash(false), 4000)
+    try {
+      await onLeaveUpdate([...leaves, newLeave])
+      setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
+      setLeaveFlash(true)
+      setTimeout(() => setLeaveFlash(false), 4000)
+    } catch (err) {
+      setLeaveError(err instanceof Error ? err.message : 'Could not submit your leave application. Please try again.')
+    }
   }
 
-  function submitTicket() {
+  async function submitTicket() {
     if (!ticketForm.title || !ticketForm.description) return
+    setTicketError('')
     const newTicket: EmployeeTicket = {
       id: `TKT-${Date.now()}`,
       employeeId,
@@ -325,9 +333,13 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
       updatedAt: new Date().toISOString().slice(0, 10),
       comments: [],
     }
-    onTicketsUpdate([newTicket, ...tickets])
-    setTicketForm({ title: '', type: 'IT Support', priority: 'Medium', description: '' })
-    setShowTicketForm(false)
+    try {
+      await onTicketsUpdate([newTicket, ...tickets])
+      setTicketForm({ title: '', type: 'IT Support', priority: 'Medium', description: '' })
+      setShowTicketForm(false)
+    } catch (err) {
+      setTicketError(err instanceof Error ? err.message : 'Could not submit your ticket. Please try again.')
+    }
   }
 
   // Comments live in their own backend table now (not a field on the
@@ -380,6 +392,11 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
           {leaveFlash && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
               Submitted — pending your manager&apos;s approval.
+            </div>
+          )}
+          {leaveError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {leaveError}
             </div>
           )}
           {/* Leave Balance */}
@@ -781,6 +798,12 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
               {showTicketForm ? 'Cancel' : '+ Raise Ticket'}
             </button>
           </div>
+
+          {ticketError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {ticketError}
+            </div>
+          )}
 
           {showTicketForm && (
             <div className="bg-card rounded-xl border border-border shadow-sm p-5 space-y-4">

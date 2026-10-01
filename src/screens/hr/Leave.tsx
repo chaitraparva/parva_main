@@ -27,7 +27,7 @@ const LEAVE_TYPES = ['Sick', 'Casual', 'Earned', 'Unpaid'] as const
 interface LeaveProps {
   role: Role
   leaves: LeaveRequest[]
-  onLeaveUpdate: (leaves: LeaveRequest[]) => void
+  onLeaveUpdate: (leaves: LeaveRequest[]) => Promise<void>
   employees: Employee[]
 }
 
@@ -37,14 +37,21 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
   const [showApplyForm, setShowApplyForm] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [form, setForm] = useState({ employeeName: '', type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '' })
+  const [saveError, setSaveError] = useState('')
 
-  const handle = (id: string, action: 'approved' | 'rejected') => {
-    onLeaveUpdate(leaves.map(l => l.id === id ? { ...l, status: action, pendingWith: 'done' } : l))
-    setExpandedId(null)
+  const handle = async (id: string, action: 'approved' | 'rejected') => {
+    setSaveError('')
+    try {
+      await onLeaveUpdate(leaves.map(l => l.id === id ? { ...l, status: action, pendingWith: 'done' } : l))
+      setExpandedId(null)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save that decision. Please try again.')
+    }
   }
 
-  const applyLeave = () => {
+  const applyLeave = async () => {
     if (!form.employeeName || !form.startDate || !form.endDate || !form.reason) return
+    setSaveError('')
     const start = new Date(form.startDate)
     const end = new Date(form.endDate)
     const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
@@ -79,11 +86,15 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
       submittedByRole,
       pendingWith,
     }
-    onLeaveUpdate([newLeave, ...leaves])
-    setShowApplyForm(false)
-    setForm({ employeeName: '', type: 'Sick', startDate: '', endDate: '', reason: '' })
-    setTab('requests')
-    setFilterStatus('pending')
+    try {
+      await onLeaveUpdate([newLeave, ...leaves])
+      setShowApplyForm(false)
+      setForm({ employeeName: '', type: 'Sick', startDate: '', endDate: '', reason: '' })
+      setTab('requests')
+      setFilterStatus('pending')
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not submit that leave application. Please try again.')
+    }
   }
 
   // A CRM employee's leave is decided entirely by their line manager (see
@@ -126,6 +137,12 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
           <Plus size={15} /> Apply Leave (HR)
         </button>
       </div>
+
+      {saveError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+          {saveError}
+        </div>
+      )}
 
       {/* Apply form */}
       {showApplyForm && (

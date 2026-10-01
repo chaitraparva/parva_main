@@ -52,7 +52,7 @@ interface Group {
 
 interface Props {
   expenses: ExpenseClaim[]
-  onExpensesUpdate: (list: ExpenseClaim[]) => void
+  onExpensesUpdate: (list: ExpenseClaim[]) => Promise<void>
   onExpensesRefetch: () => Promise<void>
   employees: Employee[]
   currentEmployee?: Employee
@@ -135,8 +135,13 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetc
     return ms && mc
   })
 
-  const update = (id: string, patch: Partial<ExpenseClaim>) => {
-    onExpensesUpdate(expenses.map(c => c.id === id ? { ...c, ...patch } : c))
+  const update = async (id: string, patch: Partial<ExpenseClaim>) => {
+    setUploadError(null)
+    try {
+      await onExpensesUpdate(expenses.map(c => c.id === id ? { ...c, ...patch } : c))
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Could not save that expense claim change. Please try again.')
+    }
   }
 
   // approvedBy must be the approver's real employee id, not their display

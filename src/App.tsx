@@ -276,7 +276,7 @@ export default function App() {
   // setRawLeaves below makes the change visible immediately, then a re-fetch
   // once the server calls settle replaces temp ids/timestamps with the real
   // stored values (or reverts if a call failed).
-  const onLeaveUpdate = (next: LeaveRequest[]) => {
+  const onLeaveUpdate = async (next: LeaveRequest[]) => {
     const prevById = new Map(leaves.map(l => [l.id, l]))
     const created = next.filter(l => !prevById.has(l.id))
     const updated = next.filter(l => {
@@ -298,42 +298,41 @@ export default function App() {
       appliedOn: l.appliedOn,
     })))
 
-      ; (async () => {
-        try {
-          for (const l of created) {
-            await api.createLeaveRequest({
-              employeeId: l.employeeId,
-              type: l.type,
-              startDate: l.startDate,
-              endDate: l.endDate,
-              days: l.days,
-              reason: l.reason,
-              submittedByRole: l.submittedByRole,
-              pendingWith: l.pendingWith,
-            })
-          }
-          for (const l of updated) {
-            await api.updateLeaveRequest(l.id, {
-              status: l.status,
-              pendingWith: l.pendingWith,
-              decidedBy: currentEmployeeId || undefined,
-              decidedAt: new Date().toISOString(),
-            })
-          }
-        } catch (err) {
-          console.error('Failed to save a leave request change to the server', err)
-        } finally {
-          try {
-            setRawLeaves(await api.fetchLeaveRequests())
-          } catch {
-            // Offline/unreachable — stay on the optimistic state rather than
-            // blanking the screen.
-          }
-        }
-      })()
+    try {
+      for (const l of created) {
+        await api.createLeaveRequest({
+          employeeId: l.employeeId,
+          type: l.type,
+          startDate: l.startDate,
+          endDate: l.endDate,
+          days: l.days,
+          reason: l.reason,
+          submittedByRole: l.submittedByRole,
+          pendingWith: l.pendingWith,
+        })
+      }
+      for (const l of updated) {
+        await api.updateLeaveRequest(l.id, {
+          status: l.status,
+          pendingWith: l.pendingWith,
+          decidedBy: currentEmployeeId || undefined,
+          decidedAt: new Date().toISOString(),
+        })
+      }
+    } catch (err) {
+      console.error('Failed to save a leave request change to the server', err)
+      throw err
+    } finally {
+      try {
+        setRawLeaves(await api.fetchLeaveRequests())
+      } catch {
+        // Offline/unreachable — stay on the optimistic state rather than
+        // blanking the screen.
+      }
+    }
   }
   // Same generic diff-and-sync approach as onPayrollUpdate/onAttendanceUpdate.
-  const onExpensesUpdate = (next: ExpenseClaim[]) => {
+  const onExpensesUpdate = async (next: ExpenseClaim[]) => {
     const prevById = new Map(expenses.map(e => [e.id, e]))
     const created = next.filter(e => !prevById.has(e.id))
     const updated = next.filter(e => {
@@ -343,24 +342,23 @@ export default function App() {
 
     setRawExpenses(next.map(e => ({ id: e.id, claimedOn: e.claimedOn, ...expenseFieldsOf(e) } as api.RawExpenseClaim)))
 
-      ; (async () => {
-        try {
-          for (const e of created) {
-            await api.createExpenseClaim(expenseFieldsOf(e))
-          }
-          for (const e of updated) {
-            await api.updateExpenseClaim(e.id, expenseFieldsOf(e))
-          }
-        } catch (err) {
-          console.error('Failed to save an expense claim change to the server', err)
-        } finally {
-          try {
-            setRawExpenses(await api.fetchExpenseClaims())
-          } catch {
-            // Offline/unreachable — stay on the optimistic state.
-          }
-        }
-      })()
+    try {
+      for (const e of created) {
+        await api.createExpenseClaim(expenseFieldsOf(e))
+      }
+      for (const e of updated) {
+        await api.updateExpenseClaim(e.id, expenseFieldsOf(e))
+      }
+    } catch (err) {
+      console.error('Failed to save an expense claim change to the server', err)
+      throw err
+    } finally {
+      try {
+        setRawExpenses(await api.fetchExpenseClaims())
+      } catch {
+        // Offline/unreachable — stay on the optimistic state.
+      }
+    }
   }
   // Used only by MyPortal's expense-sheet submission, which creates claims
   // (and uploads their receipt photos) directly against the API rather than
@@ -381,7 +379,7 @@ export default function App() {
   // records get touched by more distinct actions (generate, manager
   // approve, HR process, finance sign-off) than leave requests do, so this
   // diffs the actual stored columns rather than special-casing each one.
-  const onPayrollUpdate = (next: PayrollRecord[]) => {
+  const onPayrollUpdate = async (next: PayrollRecord[]) => {
     const prevById = new Map(payroll.map(p => [p.id, p]))
     const created = next.filter(p => !prevById.has(p.id))
     const updated = next.filter(p => {
@@ -391,24 +389,23 @@ export default function App() {
 
     setRawPayroll(next.map(p => ({ id: p.id, ...payrollFieldsOf(p) } as api.RawPayrollRecord)))
 
-      ; (async () => {
-        try {
-          for (const p of created) {
-            await api.createPayrollRecord(payrollFieldsOf(p))
-          }
-          for (const p of updated) {
-            await api.updatePayrollRecord(p.id, payrollFieldsOf(p))
-          }
-        } catch (err) {
-          console.error('Failed to save a payroll record change to the server', err)
-        } finally {
-          try {
-            setRawPayroll(await api.fetchPayrollRecords())
-          } catch {
-            // Offline/unreachable — stay on the optimistic state.
-          }
-        }
-      })()
+    try {
+      for (const p of created) {
+        await api.createPayrollRecord(payrollFieldsOf(p))
+      }
+      for (const p of updated) {
+        await api.updatePayrollRecord(p.id, payrollFieldsOf(p))
+      }
+    } catch (err) {
+      console.error('Failed to save a payroll record change to the server', err)
+      throw err
+    } finally {
+      try {
+        setRawPayroll(await api.fetchPayrollRecords())
+      } catch {
+        // Offline/unreachable — stay on the optimistic state.
+      }
+    }
   }
   // Same generic diff-and-sync approach as onPayrollUpdate, EXCEPT this one
   // is async and re-throws its error instead of only console.error-ing it.
@@ -496,7 +493,7 @@ export default function App() {
   // through this path; see addTicketComment below instead. updatedAt isn't
   // part of the equality check (it always differs) but IS sent on every
   // real update, mirroring how onLeaveUpdate always sets decidedAt itself.
-  const onTicketsUpdate = (next: EmployeeTicket[]) => {
+  const onTicketsUpdate = async (next: EmployeeTicket[]) => {
     const prevById = new Map(tickets.map(t => [t.id, t]))
     const created = next.filter(t => !prevById.has(t.id))
     const updated = next.filter(t => {
@@ -506,24 +503,23 @@ export default function App() {
 
     setRawTickets(next.map(t => ({ id: t.id, raisedOn: t.raisedOn, updatedAt: t.updatedAt, ...ticketFieldsOf(t) } as api.RawEmployeeTicket)))
 
-      ; (async () => {
-        try {
-          for (const t of created) {
-            await api.createTicket(ticketFieldsOf(t))
-          }
-          for (const t of updated) {
-            await api.updateTicket(t.id, { ...ticketFieldsOf(t), updatedAt: new Date().toISOString() })
-          }
-        } catch (err) {
-          console.error('Failed to save a ticket change to the server', err)
-        } finally {
-          try {
-            setRawTickets(await api.fetchTickets())
-          } catch {
-            // Offline/unreachable — stay on the optimistic state.
-          }
-        }
-      })()
+    try {
+      for (const t of created) {
+        await api.createTicket(ticketFieldsOf(t))
+      }
+      for (const t of updated) {
+        await api.updateTicket(t.id, { ...ticketFieldsOf(t), updatedAt: new Date().toISOString() })
+      }
+    } catch (err) {
+      console.error('Failed to save a ticket change to the server', err)
+      throw err
+    } finally {
+      try {
+        setRawTickets(await api.fetchTickets())
+      } catch {
+        // Offline/unreachable — stay on the optimistic state.
+      }
+    }
   }
   // Adding a reply never goes through onTicketsUpdate above — comments live
   // in their own table, not a column on the ticket — so this posts directly
@@ -545,7 +541,7 @@ export default function App() {
   // — clearanceChecklist is a real JSONB column (see exitFieldsOf/EXIT_FIELDS
   // above), so toggling one of its items is just another field change here,
   // not a separate table like ticket comments needed.
-  const onExitsUpdate = (next: ExitRecord[]) => {
+  const onExitsUpdate = async (next: ExitRecord[]) => {
     const prevById = new Map(exits.map(r => [r.id, r]))
     const created = next.filter(r => !prevById.has(r.id))
     const updated = next.filter(r => {
@@ -555,30 +551,29 @@ export default function App() {
 
     setRawExits(next.map(r => ({ id: r.id, ...exitFieldsOf(r) } as api.RawExitRecord)))
 
-      ; (async () => {
-        try {
-          for (const r of created) {
-            await api.createExitRecord(exitFieldsOf(r))
-          }
-          for (const r of updated) {
-            await api.updateExitRecord(r.id, exitFieldsOf(r))
-          }
-        } catch (err) {
-          console.error('Failed to save an exit record change to the server', err)
-        } finally {
-          try {
-            setRawExits(await api.fetchExitRecords())
-          } catch {
-            // Offline/unreachable — stay on the optimistic state.
-          }
-        }
-      })()
+    try {
+      for (const r of created) {
+        await api.createExitRecord(exitFieldsOf(r))
+      }
+      for (const r of updated) {
+        await api.updateExitRecord(r.id, exitFieldsOf(r))
+      }
+    } catch (err) {
+      console.error('Failed to save an exit record change to the server', err)
+      throw err
+    } finally {
+      try {
+        setRawExits(await api.fetchExitRecords())
+      } catch {
+        // Offline/unreachable — stay on the optimistic state.
+      }
+    }
   }
   // Same generic diff-and-sync approach as onExitsUpdate above.
   // job_requisitions.id is a client-supplied TEXT primary key (Recruitment.tsx
   // generates it as `req-${Date.now()}`), so unlike every other create()
   // call, this one has to send the id explicitly.
-  const onRequisitionsUpdate = (next: JobRequisition[]) => {
+  const onRequisitionsUpdate = async (next: JobRequisition[]) => {
     const prevById = new Map(requisitions.map(r => [r.id, r]))
     const created = next.filter(r => !prevById.has(r.id))
     const updated = next.filter(r => {
@@ -588,24 +583,23 @@ export default function App() {
 
     setRawRequisitions(next.map(r => ({ id: r.id, ...requisitionFieldsOf(r) } as api.RawJobRequisition)))
 
-      ; (async () => {
-        try {
-          for (const r of created) {
-            await api.createJobRequisition({ id: r.id, ...requisitionFieldsOf(r) })
-          }
-          for (const r of updated) {
-            await api.updateJobRequisition(r.id, requisitionFieldsOf(r))
-          }
-        } catch (err) {
-          console.error('Failed to save a job requisition change to the server', err)
-        } finally {
-          try {
-            setRawRequisitions(await api.fetchJobRequisitions())
-          } catch {
-            // Offline/unreachable — stay on the optimistic state.
-          }
-        }
-      })()
+    try {
+      for (const r of created) {
+        await api.createJobRequisition({ id: r.id, ...requisitionFieldsOf(r) })
+      }
+      for (const r of updated) {
+        await api.updateJobRequisition(r.id, requisitionFieldsOf(r))
+      }
+    } catch (err) {
+      console.error('Failed to save a job requisition change to the server', err)
+      throw err
+    } finally {
+      try {
+        setRawRequisitions(await api.fetchJobRequisitions())
+      } catch {
+        // Offline/unreachable — stay on the optimistic state.
+      }
+    }
   }
   // Deletes a job requisition outright — HR/management only, enforced
   // server-side via deleteRoles (see server/src/routes/resources.js), not
@@ -628,7 +622,7 @@ export default function App() {
   // so create() sends it explicitly. Every field OnboardingHR.tsx touches
   // (the coarse candidate fields AND the granular checklistDone/docItems
   // checkboxes) is a real column, so a single diff covers all of it.
-  const onOnboardingUpdate = (next: OnboardingCandidate[]) => {
+  const onOnboardingUpdate = async (next: OnboardingCandidate[]) => {
     const prevById = new Map(onboarding.map(o => [o.id, o]))
     const created = next.filter(o => !prevById.has(o.id))
     const updated = next.filter(o => {
@@ -638,24 +632,23 @@ export default function App() {
 
     setRawOnboarding(next.map(o => ({ id: o.id, ...onboardingFieldsOf(o) } as api.RawOnboardingCandidate)))
 
-      ; (async () => {
-        try {
-          for (const o of created) {
-            await api.createOnboardingCandidate({ id: o.id, ...onboardingFieldsOf(o) } as api.RawOnboardingCandidate)
-          }
-          for (const o of updated) {
-            await api.updateOnboardingCandidate(o.id, onboardingFieldsOf(o))
-          }
-        } catch (err) {
-          console.error('Failed to save an onboarding change to the server', err)
-        } finally {
-          try {
-            setRawOnboarding(await api.fetchOnboardingCandidates())
-          } catch {
-            // Offline/unreachable — stay on the optimistic state.
-          }
-        }
-      })()
+    try {
+      for (const o of created) {
+        await api.createOnboardingCandidate({ id: o.id, ...onboardingFieldsOf(o) } as api.RawOnboardingCandidate)
+      }
+      for (const o of updated) {
+        await api.updateOnboardingCandidate(o.id, onboardingFieldsOf(o))
+      }
+    } catch (err) {
+      console.error('Failed to save an onboarding change to the server', err)
+      throw err
+    } finally {
+      try {
+        setRawOnboarding(await api.fetchOnboardingCandidates())
+      } catch {
+        // Offline/unreachable — stay on the optimistic state.
+      }
+    }
   }
   // Same generic diff-and-sync approach as the other modules — in practice
   // only `read` ever changes (see Notifications.tsx's markRead/markAllRead),

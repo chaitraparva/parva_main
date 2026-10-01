@@ -33,7 +33,7 @@ function StatusBadge({ status }: { status: string }) {
 
 interface Props {
   leaves: LeaveRequest[]
-  onLeaveUpdate: (l: LeaveRequest[]) => void
+  onLeaveUpdate: (l: LeaveRequest[]) => Promise<void>
   employees: Employee[]
   payroll: PayrollRecord[]
   tickets: EmployeeTicket[]
@@ -55,10 +55,17 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
   const pendingLeaves = mgmtLeaves.filter(l => l.status === 'pending')
   const historyLeaves = mgmtLeaves.filter(l => l.status !== 'pending')
   const [confirmId, setConfirmId] = useState<{ id: string; action: 'approved' | 'rejected' } | null>(null)
+  const [leaveError, setLeaveError] = useState('')
 
-  function handleLeave(id: string, action: 'approved' | 'rejected') {
-    onLeaveUpdate(leaves.map(l => l.id === id ? { ...l, status: action, pendingWith: 'done' } : l))
-    setConfirmId(null)
+  async function handleLeave(id: string, action: 'approved' | 'rejected') {
+    setLeaveError('')
+    try {
+      await onLeaveUpdate(leaves.map(l => l.id === id ? { ...l, status: action, pendingWith: 'done' } : l))
+      setConfirmId(null)
+    } catch (err) {
+      setLeaveError(err instanceof Error ? err.message : 'Could not save that decision. Please try again.')
+      setConfirmId(null)
+    }
   }
 
   // Absent Today — every employee currently on approved leave (of any
@@ -236,6 +243,11 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
       {/* LEAVE APPROVALS */}
       {tab === 'leave-approvals' && (
         <div className="space-y-4">
+          {leaveError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {leaveError}
+            </div>
+          )}
           {/* Confirm dialog */}
           {confirmId && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">

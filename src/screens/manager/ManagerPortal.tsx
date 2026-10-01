@@ -37,7 +37,7 @@ function StatusBadge({ status }: { status: string }) {
 
 interface Props {
   leaves: LeaveRequest[]
-  onLeaveUpdate: (l: LeaveRequest[]) => void
+  onLeaveUpdate: (l: LeaveRequest[]) => Promise<void>
   expenses: ExpenseClaim[]
   onExpensesUpdate: (e: ExpenseClaim[]) => void
   employeeId: string
@@ -45,7 +45,7 @@ interface Props {
   attendance: AttendanceRecord[]
   onAttendanceUpdate: (next: AttendanceRecord[]) => Promise<void>
   payroll: PayrollRecord[]
-  onPayrollUpdate: (next: PayrollRecord[]) => void
+  onPayrollUpdate: (next: PayrollRecord[]) => Promise<void>
 }
 
 export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate, employeeId, employees, attendance: attendanceRecords, onAttendanceUpdate, payroll: payrollProp, onPayrollUpdate }: Props) {
@@ -62,10 +62,16 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
   const pendingTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.pendingWith === 'manager')
   const historyTeamLeaves = leaves.filter(l => teamIds.includes(l.employeeId) && l.status !== 'pending')
 
-  const handleTeamLeave = (id: string, action: 'approved' | 'rejected') => {
-    onLeaveUpdate(leaves.map(l => l.id === id
-      ? { ...l, status: action, pendingWith: 'done' }
-      : l))
+  const [teamLeaveError, setTeamLeaveError] = useState('')
+  const handleTeamLeave = async (id: string, action: 'approved' | 'rejected') => {
+    setTeamLeaveError('')
+    try {
+      await onLeaveUpdate(leaves.map(l => l.id === id
+        ? { ...l, status: action, pendingWith: 'done' }
+        : l))
+    } catch (err) {
+      setTeamLeaveError(err instanceof Error ? err.message : 'Could not save that decision. Please try again.')
+    }
   }
 
   // My leave
@@ -75,10 +81,12 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
   const meDepartment = me?.department || ''
   const myBalance = me ? computeLeaveBalance(me, leaves) : null
   const [leaveFlash, setLeaveFlash] = useState(false)
+  const [leaveError, setLeaveError] = useState('')
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '' })
 
-  function submitMyLeave() {
+  async function submitMyLeave() {
     if (!leaveForm.startDate || !leaveForm.endDate || !leaveForm.reason) return
+    setLeaveError('')
     const start = new Date(leaveForm.startDate)
     const end = new Date(leaveForm.endDate)
     const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
@@ -97,10 +105,14 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
       submittedByRole: 'manager',
       pendingWith: 'hr',
     }
-    onLeaveUpdate([...leaves, newLeave])
-    setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
-    setLeaveFlash(true)
-    setTimeout(() => setLeaveFlash(false), 4000)
+    try {
+      await onLeaveUpdate([...leaves, newLeave])
+      setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
+      setLeaveFlash(true)
+      setTimeout(() => setLeaveFlash(false), 4000)
+    } catch (err) {
+      setLeaveError(err instanceof Error ? err.message : 'Could not submit your leave application. Please try again.')
+    }
   }
 
   // Attendance
@@ -204,10 +216,14 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
   // Payroll
   const [payroll, setPayrollLocal] = useState<PayrollRecord[]>(payrollProp)
   useEffect(() => { setPayrollLocal(payrollProp) }, [payrollProp])
+  const [payrollError, setPayrollError] = useState('')
   const setPayroll = (updater: PayrollRecord[] | ((prev: PayrollRecord[]) => PayrollRecord[])) => {
+    setPayrollError('')
     setPayrollLocal(prev => {
       const next = typeof updater === 'function' ? (updater as (prev: PayrollRecord[]) => PayrollRecord[])(prev) : updater
-      onPayrollUpdate(next)
+      onPayrollUpdate(next).catch(err => {
+        setPayrollError(err instanceof Error ? err.message : 'Could not save that payroll change. Please try again.')
+      })
       return next
     })
   }
@@ -252,6 +268,11 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
       {/* TEAM LEAVE REQUESTS */}
       {tab === 'team-leave' && (
         <div className="space-y-4">
+          {teamLeaveError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {teamLeaveError}
+            </div>
+          )}
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
             <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Pending Your Approval</h2>
             {pendingTeamLeaves.length === 0 ? (
@@ -330,6 +351,11 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
           {leaveFlash && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
               Submitted — pending HR's approval.
+            </div>
+          )}
+          {leaveError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {leaveError}
             </div>
           )}
           {myBalance && (
@@ -637,6 +663,11 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
       {/* PAYROLL */}
       {tab === 'payroll' && (
         <div className="space-y-4">
+          {payrollError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {payrollError}
+            </div>
+          )}
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-base" style={{ color: navy }}>

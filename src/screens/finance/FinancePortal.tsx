@@ -29,13 +29,13 @@ function StatusBadge({ status }: { status: string }) {
 
 interface Props {
   payroll: PayrollRecord[]
-  onPayrollUpdate: (next: PayrollRecord[]) => void
+  onPayrollUpdate: (next: PayrollRecord[]) => Promise<void>
   expenses: ExpenseClaim[]
-  onExpensesUpdate: (next: ExpenseClaim[]) => void
+  onExpensesUpdate: (next: ExpenseClaim[]) => Promise<void>
   employees: Employee[]
   currentEmployee?: Employee
   leaves: LeaveRequest[]
-  onLeaveUpdate: (l: LeaveRequest[]) => void
+  onLeaveUpdate: (l: LeaveRequest[]) => Promise<void>
   employeeId: string
   attendance: AttendanceRecord[]
   onAttendanceUpdate: (next: AttendanceRecord[]) => Promise<void>
@@ -53,10 +53,12 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
   const meDepartment = me?.department || ''
   const myBalance = me ? computeLeaveBalance(me, leaves) : null
   const [leaveFlash, setLeaveFlash] = useState(false)
+  const [leaveError, setLeaveError] = useState('')
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '' })
 
-  function submitMyLeave() {
+  async function submitMyLeave() {
     if (!leaveForm.startDate || !leaveForm.endDate || !leaveForm.reason) return
+    setLeaveError('')
     const start = new Date(leaveForm.startDate)
     const end = new Date(leaveForm.endDate)
     const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
@@ -75,10 +77,14 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
       submittedByRole: 'finance',
       pendingWith: 'hr',
     }
-    onLeaveUpdate([...leaves, newLeave])
-    setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
-    setLeaveFlash(true)
-    setTimeout(() => setLeaveFlash(false), 4000)
+    try {
+      await onLeaveUpdate([...leaves, newLeave])
+      setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
+      setLeaveFlash(true)
+      setTimeout(() => setLeaveFlash(false), 4000)
+    } catch (err) {
+      setLeaveError(err instanceof Error ? err.message : 'Could not submit your leave application. Please try again.')
+    }
   }
 
   // My Attendance — same self-service pattern as ManagerPortal.tsx/
@@ -131,10 +137,14 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
   // Finance to give the final sign-off and mark it disbursed.
   const [payroll, setPayrollLocal] = useState<PayrollRecord[]>(payrollProp)
   useEffect(() => { setPayrollLocal(payrollProp) }, [payrollProp])
+  const [payrollError, setPayrollError] = useState('')
   const setPayroll = (updater: PayrollRecord[] | ((prev: PayrollRecord[]) => PayrollRecord[])) => {
+    setPayrollError('')
     setPayrollLocal(prev => {
       const next = typeof updater === 'function' ? (updater as (prev: PayrollRecord[]) => PayrollRecord[])(prev) : updater
-      onPayrollUpdate(next)
+      onPayrollUpdate(next).catch(err => {
+        setPayrollError(err instanceof Error ? err.message : 'Could not save that payroll change. Please try again.')
+      })
       return next
     })
   }
@@ -154,12 +164,17 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
   // to actually pay out and mark reimbursed.
   const awaitingReimbursement = expenses.filter(c => c.status === 'Approved')
   const reimbursedClaims = expenses.filter(c => c.status === 'Reimbursed')
+  const [reimburseError, setReimburseError] = useState('')
   function reimburse(id: string) {
+    setReimburseError('')
     onExpensesUpdate(expenses.map(c => c.id === id ? { ...c, status: 'Reimbursed' as const, reimbursedOn: new Date().toISOString().split('T')[0] } : c))
+      .catch(err => setReimburseError(err instanceof Error ? err.message : 'Could not save that reimbursement. Please try again.'))
   }
   function reimburseAll() {
+    setReimburseError('')
     const today = new Date().toISOString().split('T')[0]
     onExpensesUpdate(expenses.map(c => c.status === 'Approved' ? { ...c, status: 'Reimbursed' as const, reimbursedOn: today } : c))
+      .catch(err => setReimburseError(err instanceof Error ? err.message : 'Could not save those reimbursements. Please try again.'))
   }
 
   const tabs: { key: Tab; label: string }[] = [
@@ -232,6 +247,11 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
       {/* PAYROLL SIGN-OFF */}
       {tab === 'payroll-signoff' && (
         <div className="space-y-4">
+          {payrollError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {payrollError}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Pending Sign-off Total</p>
@@ -324,6 +344,11 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
       {/* REIMBURSEMENTS — HR-approved expense claims, paid out by Finance */}
       {tab === 'reimbursements' && (
         <div className="space-y-4">
+          {reimburseError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {reimburseError}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Awaiting Reimbursement</p>
@@ -426,6 +451,11 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
           {leaveFlash && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
               Submitted — pending HR's approval.
+            </div>
+          )}
+          {leaveError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+              {leaveError}
             </div>
           )}
           {myBalance && (

@@ -54,7 +54,7 @@ function scoreColor(score: number) {
 
 interface RecruitmentProps {
   requisitions: JobRequisition[]
-  onRequisitionsUpdate: (next: JobRequisition[]) => void
+  onRequisitionsUpdate: (next: JobRequisition[]) => Promise<void>
   onDeleteRequisition?: (id: string) => Promise<void>
   candidates: Candidate[]
   currentEmployee?: Employee
@@ -66,9 +66,12 @@ export default function Recruitment({ requisitions, onRequisitionsUpdate, onDele
   const [reqs, setReqsLocal] = useState<JobRequisition[]>(requisitions)
   useEffect(() => { setReqsLocal(requisitions) }, [requisitions])
   const setReqs = (updater: JobRequisition[] | ((prev: JobRequisition[]) => JobRequisition[])) => {
+    setDeleteError(null)
     setReqsLocal(prev => {
       const next = typeof updater === 'function' ? (updater as (prev: JobRequisition[]) => JobRequisition[])(prev) : updater
-      onRequisitionsUpdate(next)
+      onRequisitionsUpdate(next).catch(err => {
+        setDeleteError(err instanceof Error ? err.message : 'Could not save that requisition change. Please try again.')
+      })
       return next
     })
   }

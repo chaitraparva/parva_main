@@ -54,7 +54,7 @@ interface OnboardingHRProps {
     docStatus: string; onboardingProgress: number; email?: string; phone?: string
     checklistDone: string[]; docItems: Record<string, boolean>
   }>
-  onOnboardingUpdate: (next: OnboardingHRProps['onboarding']) => void
+  onOnboardingUpdate: (next: OnboardingHRProps['onboarding']) => Promise<void>
 }
 
 function toLocalCandidates(source: OnboardingHRProps['onboarding']): Candidate[] {
@@ -70,10 +70,14 @@ export default function OnboardingHR({ onboarding, onOnboardingUpdate }: Onboard
   // finishing, or another tab/session updating the same data).
   useEffect(() => { setCandidatesLocal(toLocalCandidates(onboarding)) }, [onboarding])
 
+  const [saveError, setSaveError] = useState('')
   const setCandidates = (updater: Candidate[] | ((prev: Candidate[]) => Candidate[])) => {
+    setSaveError('')
     setCandidatesLocal(prev => {
       const next = typeof updater === 'function' ? (updater as (prev: Candidate[]) => Candidate[])(prev) : updater
-      onOnboardingUpdate(next)
+      onOnboardingUpdate(next).catch(err => {
+        setSaveError(err instanceof Error ? err.message : 'Could not save that onboarding change. Please try again.')
+      })
       return next
     })
   }
@@ -130,6 +134,12 @@ export default function OnboardingHR({ onboarding, onOnboardingUpdate }: Onboard
           <Plus size={15} /> Add New Joinee
         </button>
       </div>
+
+      {saveError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+          {saveError}
+        </div>
+      )}
 
       {/* Add form */}
       {showAddForm && (

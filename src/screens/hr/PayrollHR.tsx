@@ -35,7 +35,7 @@ const PAYROLL_EXCLUDED_IDS = ['DF230001', 'DF230002', 'PA230045'] // Neelesh H P
 interface PayrollHRProps {
   role?: string
   payroll: PayrollRecord[]
-  onPayrollUpdate: (next: PayrollRecord[]) => void
+  onPayrollUpdate: (next: PayrollRecord[]) => Promise<void>
   employees: Employee[]
   attendance: AttendanceRecord[]
   leaves: LeaveRequest[]
@@ -48,10 +48,17 @@ function currentPayMonthInput() {
 export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, attendance, leaves }: PayrollHRProps) {
   const [records, setRecordsLocal] = useState<PayrollRecord[]>(payroll.filter(r => !PAYROLL_EXCLUDED_IDS.includes(r.employeeId)))
   useEffect(() => { setRecordsLocal(payroll.filter(r => !PAYROLL_EXCLUDED_IDS.includes(r.employeeId))) }, [payroll])
+  const [saveError, setSaveError] = useState('')
   const setRecords = (updater: PayrollRecord[] | ((prev: PayrollRecord[]) => PayrollRecord[])) => {
+    setSaveError('')
     setRecordsLocal(prev => {
       const next = typeof updater === 'function' ? (updater as (prev: PayrollRecord[]) => PayrollRecord[])(prev) : updater
-      onPayrollUpdate(next)
+      // onPayrollUpdate now rejects on a failed save (see App.tsx) instead of
+      // only logging it — surface that here instead of letting it silently
+      // revert on the next refetch with no explanation.
+      onPayrollUpdate(next).catch(err => {
+        setSaveError(err instanceof Error ? err.message : 'Could not save that payroll change. Please try again.')
+      })
       return next
     })
   }
@@ -171,6 +178,12 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
           </button>
         </div>
       </div>
+
+      {saveError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+          {saveError}
+        </div>
+      )}
 
       {/* Generate Payslip */}
       {showGenerate && (

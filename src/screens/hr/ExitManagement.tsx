@@ -25,17 +25,21 @@ const NEW_EXIT_DEFAULT = {
 
 interface ExitManagementProps {
   exits: ExitRecord[]
-  onExitsUpdate: (next: ExitRecord[]) => void
+  onExitsUpdate: (next: ExitRecord[]) => Promise<void>
   employees: Employee[]
 }
 
 export default function ExitManagement({ exits, onExitsUpdate, employees }: ExitManagementProps) {
   const [records, setRecordsLocal] = useState<ExitRecord[]>(exits)
   useEffect(() => { setRecordsLocal(exits) }, [exits])
+  const [saveError, setSaveError] = useState('')
   const setRecords = (updater: ExitRecord[] | ((prev: ExitRecord[]) => ExitRecord[])) => {
+    setSaveError('')
     setRecordsLocal(prev => {
       const next = typeof updater === 'function' ? (updater as (prev: ExitRecord[]) => ExitRecord[])(prev) : updater
-      onExitsUpdate(next)
+      onExitsUpdate(next).catch(err => {
+        setSaveError(err instanceof Error ? err.message : 'Could not save that exit record change. Please try again.')
+      })
       return next
     })
   }
@@ -294,6 +298,12 @@ export default function ExitManagement({ exits, onExitsUpdate, employees }: Exit
           <Plus size={16} /> Initiate Exit
         </button>
       </div>
+
+      {saveError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+          {saveError}
+        </div>
+      )}
 
       {/* Add form */}
       {showAddForm && (
