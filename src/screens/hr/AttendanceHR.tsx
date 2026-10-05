@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AttendanceRecord, Employee } from '../../types'
-import { Calendar, Plus, Check } from 'lucide-react'
+import { Calendar, Plus, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
@@ -52,9 +52,13 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
   }
   // Defaults to TODAY (not "All dates") so the percentages below are
   // meaningful on load — see percentBase/notMarked just below for why.
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const nowLocal = new Date()
+  const todayIso = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`
   const [dateFilter, setDateFilter] = useState(todayIso)
   const [showMarkForm, setShowMarkForm] = useState(false)
+  // Heatmap month being viewed (0 = this month, -1 = last month, ...). Records
+  // for every month are kept in the database; this only picks which to show.
+  const [heatmapOffset, setHeatmapOffset] = useState(0)
   const [markForm, setMarkForm] = useState({ employeeName: '', date: todayIso, checkIn: '09:00', checkOut: '18:00', status: 'present' as AttStatus })
 
   const filtered = records.filter(r => !ATTENDANCE_EXCLUDED_IDS.includes(r.employeeId) && (!dateFilter || r.date === dateFilter))
@@ -108,13 +112,16 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
   // Heatmap: the current calendar month, computed live from real attendance
   // records (not a fixed/seeded month — see the Heatmap section below).
   const heatmapNow = new Date()
-  const heatmapYear = heatmapNow.getFullYear()
-  const heatmapMonthIndex = heatmapNow.getMonth() // 0-based
-  const heatmapMonthLabel = heatmapNow.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+  const heatmapView = new Date(heatmapNow.getFullYear(), heatmapNow.getMonth() + heatmapOffset, 1)
+  const heatmapYear = heatmapView.getFullYear()
+  const heatmapMonthIndex = heatmapView.getMonth() // 0-based
+  const heatmapMonthLabel = heatmapView.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
   const heatmapDaysInMonth = new Date(heatmapYear, heatmapMonthIndex + 1, 0).getDate()
   // JS getDay() is Sun=0..Sat=6; convert to Mon=0..Sun=6 to match the header row.
-  const heatmapStartDow = (new Date(heatmapYear, heatmapMonthIndex, 1).getDay() + 6) % 7
-  const heatmapToday = heatmapNow.getDate()
+  const heatmapStartDow = (heatmapView.getDay() + 6) % 7
+  // Days after "today" are future only when viewing the current month; past
+  // months are fully in the past, future months fully in the future.
+  const heatmapToday = heatmapOffset === 0 ? heatmapNow.getDate() : heatmapOffset < 0 ? 999 : 0
   const allTrackedRecords = records.filter(r => !ATTENDANCE_EXCLUDED_IDS.includes(r.employeeId))
 
   return (
@@ -279,7 +286,20 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
           day with zero records marked yet (very likely early on, for a
           fresh database) shows as "no data" rather than a fabricated rate. */}
       <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h3 className="font-serif text-lg font-semibold text-foreground mb-4">{heatmapMonthLabel} — Attendance Heatmap</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-serif text-lg font-semibold text-foreground">{heatmapMonthLabel} — Attendance Heatmap</h3>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setHeatmapOffset(o => o - 1)} className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Previous month" title="Previous month">
+              <ChevronLeft size={16} />
+            </button>
+            <button onClick={() => setHeatmapOffset(0)} disabled={heatmapOffset === 0} className="px-2 py-1 rounded-md text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-40">
+              This month
+            </button>
+            <button onClick={() => setHeatmapOffset(o => Math.min(0, o + 1))} disabled={heatmapOffset >= 0} className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-40" aria-label="Next month" title="Next month">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <div className="grid grid-cols-7 gap-1.5 min-w-[420px]">
             {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
@@ -291,7 +311,7 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
             {Array.from({ length: heatmapDaysInMonth }).map((_, i) => {
               const day = i + 1
               const dow = (heatmapStartDow + i) % 7
-              const isWeekend = dow >= 5
+              const isWeekend = dow === 6 // Sunday only — Saturday is a working day
               const isFuture = day > heatmapToday
               if (isWeekend) {
                 return (
@@ -320,12 +340,14 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
                 )
               }
               const presentCount = dayRecords.filter(r => r.status !== 'absent').length
-              const rate = presentCount / dayRecords.length
+              // Out of the whole tracked team, not just whoever got marked.
+              const headcount = Math.max(trackedEmployees.length, dayRecords.length)
+              const rate = presentCount / headcount
               const bucket = rate >= 0.85 ? 0 : rate >= 0.7 ? 1 : 2
               const col = HEATMAP_COLORS[bucket]
               return (
                 <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs font-semibold cursor-default"
-                  title={`${Math.round(rate * 100)}% present (${presentCount}/${dayRecords.length} marked)`}
+                  title={`${Math.round(rate * 100)}% present (${presentCount} of ${headcount} team members)`}
                   style={{ backgroundColor: col.bg, color: col.text }}>
                   {day}
                 </div>
@@ -338,7 +360,7 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
             { col: HEATMAP_COLORS[0], label: '≥85% present' },
             { col: HEATMAP_COLORS[1], label: '70–84%' },
             { col: HEATMAP_COLORS[2], label: '<70%' },
-            { bg: '#F5F2EC', text: '#E5DFD5', label: 'Weekend' },
+            { bg: '#F5F2EC', text: '#E5DFD5', label: 'Sunday (off)' },
             { bg: '#FFFFFF', text: '#D6D0C4', label: 'No data yet' },
           ].map(l => (
             <div key={l.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">

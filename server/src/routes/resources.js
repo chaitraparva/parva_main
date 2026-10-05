@@ -37,6 +37,9 @@ export const payrollRecordsRouter = crudRouter({
 export const attendanceRouter = crudRouter({
   table: 'attendance_records',
   allowedColumns: ['employeeId', 'date', 'checkIn', 'checkOut', 'status'],
+  // One row per employee per day — the default 500-row cap only covered the
+  // last ~2 weeks, so older months vanished from the HR heatmap/log.
+  listLimit: 20000,
   // Open to any signed-in employee — until biometric attendance is wired up,
   // everyone (CRM, manager, HR, management) marks their own attendance for
   // today from their own portal (see MyPortal.tsx/ManagerPortal.tsx), same

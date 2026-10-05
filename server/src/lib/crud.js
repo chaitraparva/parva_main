@@ -42,6 +42,10 @@ import { asyncHandler } from './async-handler.js'
  * corrupt their records). Pass deleteRoles separately for roles allowed to
  * delete ANY row regardless of ownership/status.
  *
+ * listLimit: max rows returned by the unfiltered GET / (default 500, newest first).
+ * Tables that grow by many rows per day (attendance_records: one row per
+ * employee per day) must raise this or older months silently drop out.
+ *
  * jsonColumns: list any allowedColumns whose value is a JS ARRAY that gets
  * stored in a JSONB column (e.g. exit_records.clearance_checklist,
  * onboarding_candidates.checklistDone). This matters because node-postgres
@@ -55,7 +59,7 @@ import { asyncHandler } from './async-handler.js'
  * this — node-postgres already JSON.stringify()s those correctly — but
  * listing an object column here too is harmless and more explicit.
  */
-export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles, updateRoles, deleteRoles, selfDelete, selfDeleteStatuses, jsonColumns }) {
+export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles, updateRoles, deleteRoles, selfDelete, selfDeleteStatuses, jsonColumns, listLimit = 500 }) {
   // Read stays open to any signed-in user; only writes are role-gated
   // (see writeGuard/updateGuard below).
   const router = Router()
@@ -65,7 +69,7 @@ export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles,
     const hasEmployeeFilter = allowedColumns.includes('employeeId') && req.query.employeeId
     const sql = hasEmployeeFilter
       ? `SELECT * FROM ${table} WHERE employee_id = $1 ORDER BY ${idColumn} DESC`
-      : `SELECT * FROM ${table} ORDER BY ${idColumn} DESC LIMIT 500`
+      : `SELECT * FROM ${table} ORDER BY ${idColumn} DESC LIMIT ${Number(listLimit)}`
     const params = hasEmployeeFilter ? [req.query.employeeId] : []
     const { rows } = await pool.query(sql, params)
     res.json({ [table]: rows.map(toCamel) })
