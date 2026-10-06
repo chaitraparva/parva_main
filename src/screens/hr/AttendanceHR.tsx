@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { AttendanceRecord, Employee } from '../../types'
+import type { AttendanceRecord, Employee, LeaveRequest } from '../../types'
 import { Calendar, Plus, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import ClockCard from '../../components/ClockCard'
+import { ATTENDANCE_EXCLUDED_IDS, buildDayRows, isAbsentGroup, isAttended } from '../../lib/attendanceStatus'
+import type { DayRow } from '../../lib/attendanceStatus'
+import { formatClock, nowInZone, timeZoneForLocation, zoneLabel } from '../../lib/clock'
 
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
@@ -14,9 +18,14 @@ const statusStyle: Record<string, { bg: string; text: string; label: string }> =
 
 type AttStatus = 'present' | 'absent' | 'late' | 'half-day'
 
-// Group leadership (CEO, Directors) aren't tracked in day-to-day attendance —
-// excluded from this screen's employee picker and log entirely.
-const ATTENDANCE_EXCLUDED_IDS = ['DF230001', 'DF230002', 'PA230045'] // Neelesh H P, Akshita Raturi, Chaitra
+// Labels/colours for the derived per-day status shown in the log.
+const rowStyle: Record<DayRow['status'], { bg: string; text: string; label: string }> = {
+  present: { bg: '#ECFDF5', text: '#059669', label: 'Present' },
+  wfh: { bg: '#F0F9FF', text: '#0369A1', label: 'Work From Home' },
+  'half-day': { bg: '#F5F3FF', text: '#7C3AED', label: 'Half Day' },
+  absent: { bg: '#FEF2F2', text: '#DC2626', label: 'Absent' },
+  leave: { bg: '#FFFBEB', text: '#D97706', label: 'On Leave' },
+}
 
 // Heatmap day-rate buckets: 0 = good (≥85%), 1 = mid (70-84%), 2 = low (<70%)
 // — computed live from real attendance records below, not seeded/hardcoded.
@@ -29,10 +38,13 @@ const HEATMAP_COLORS = [
 interface AttendanceHRProps {
   employees: Employee[]
   attendance: AttendanceRecord[]
+  leaves: LeaveRequest[]
+  currentEmployeeId: string
   onAttendanceUpdate: (next: AttendanceRecord[]) => Promise<void>
+  onAttendanceRefresh: () => Promise<void>
 }
 
-export default function AttendanceHR({ employees, attendance, onAttendanceUpdate }: AttendanceHRProps) {
+export default function AttendanceHR({ employees, attendance, leaves, currentEmployeeId, onAttendanceUpdate, onAttendanceRefresh }: AttendanceHRProps) {
   const trackedEmployees = employees.filter(e => !ATTENDANCE_EXCLUDED_IDS.includes(e.id))
   const [records, setRecordsLocal] = useState<AttendanceRecord[]>(attendance)
   useEffect(() => { setRecordsLocal(attendance) }, [attendance])
@@ -52,33 +64,32 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
   }
   // Defaults to TODAY (not "All dates") so the percentages below are
   // meaningful on load — see percentBase/notMarked just below for why.
-  const nowLocal = new Date()
-  const todayIso = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`
+  const todayIso = nowInZone(timeZoneForLocation(employees.find(e => e.id === currentEmployeeId)?.location)).date
   const [dateFilter, setDateFilter] = useState(todayIso)
   const [showMarkForm, setShowMarkForm] = useState(false)
+  // Which group the cards below filter the list to: everyone, only those who
+  // attended (present / work from home / half day), or only the absent.
+  const [groupFilter, setGroupFilter] = useState<'all' | 'attended' | 'absent'>('all')
   // Heatmap month being viewed (0 = this month, -1 = last month, ...). Records
   // for every month are kept in the database; this only picks which to show.
   const [heatmapOffset, setHeatmapOffset] = useState(0)
   const [markForm, setMarkForm] = useState({ employeeName: '', date: todayIso, checkIn: '09:00', checkOut: '18:00', status: 'present' as AttStatus })
 
-  const filtered = records.filter(r => !ATTENDANCE_EXCLUDED_IDS.includes(r.employeeId) && (!dateFilter || r.date === dateFilter))
-
-  const summary = {
-    present: filtered.filter(r => r.status === 'present').length,
-    absent: filtered.filter(r => r.status === 'absent').length,
-    late: filtered.filter(r => r.status === 'late').length,
-    halfDay: filtered.filter(r => r.status === 'half-day').length,
+  // One row per tracked employee for the chosen day. Nobody is ever "not
+  // marked": no login that day = Absent (approved leave shows as On Leave).
+  const dayRows: DayRow[] = buildDayRows(employees, dateFilter, records, leaves)
+  const attendedRows = dayRows.filter(r => isAttended(r.status))
+  const absentRows = dayRows.filter(r => isAbsentGroup(r.status))
+  const headcount = dayRows.length
+  const pct = (n: number) => (headcount > 0 ? `${Math.round((n / headcount) * 100)}%` : '—')
+  const shownRows = groupFilter === 'attended' ? attendedRows : groupFilter === 'absent' ? absentRows : dayRows
+  const isSunday = new Date(dateFilter + 'T00:00:00').getDay() === 0
+  const breakdown = {
+    present: dayRows.filter(r => r.status === 'present').length,
+    wfh: dayRows.filter(r => r.status === 'wfh').length,
+    halfDay: dayRows.filter(r => r.status === 'half-day').length,
+    onLeave: dayRows.filter(r => r.status === 'leave').length,
   }
-  // A specific date picked -> percentages are out of everyone who should be
-  // tracked that day (attendance_records has a UNIQUE(employee_id, date)
-  // constraint, so each employee contributes at most one record here).
-  // "All dates" -> there's no single honest headcount to divide by (it
-  // spans many days), so this falls back to the old record-count behavior
-  // and the "Not Marked" card is hidden rather than showing a misleading 0.
-  const percentBase = dateFilter ? trackedEmployees.length : filtered.length
-  const notMarked = dateFilter ? Math.max(0, trackedEmployees.length - filtered.length) : null
-
-  const datesAvailable = [...new Set(records.map(r => r.date))].sort().reverse()
 
   const markAttendance = () => {
     if (!markForm.employeeName || !markForm.date) return
@@ -144,6 +155,9 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
         </div>
       )}
 
+      {/* HR's own Login / Logout / Work From Home */}
+      <ClockCard employeeId={currentEmployeeId} employees={employees} attendance={records} onRefresh={onAttendanceRefresh} />
+
       {/* Mark form */}
       {showMarkForm && (
         <div className="bg-card rounded-xl border border-border shadow-sm p-6">
@@ -170,7 +184,7 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Status</label>
               <select value={markForm.status} onChange={e => setMarkForm(p => ({ ...p, status: e.target.value as AttStatus }))}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none">
-                {Object.entries(statusStyle).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                {Object.entries(statusStyle).filter(([k]) => k !== 'late').map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
             </div>
             <div>
@@ -198,83 +212,95 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
         </div>
       )}
 
-      {/* KPI cards — percentages are out of the full tracked headcount for
-          the selected day, not just however many records exist, so this
-          can never show "100%" while most of the team hasn't marked
-          attendance. "Not Marked" (only shown for a specific date, not
-          "All dates") makes that gap visible instead of hiding it. */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {[
-          { title: 'Present', value: summary.present, bg: statusStyle.present.bg, text: statusStyle.present.text },
-          { title: 'Absent', value: summary.absent, bg: statusStyle.absent.bg, text: statusStyle.absent.text },
-          { title: 'Late', value: summary.late, bg: statusStyle.late.bg, text: statusStyle.late.text },
-          { title: 'Half Day', value: summary.halfDay, bg: statusStyle['half-day'].bg, text: statusStyle['half-day'].text },
-          ...(notMarked !== null ? [{ title: 'Not Marked', value: notMarked, bg: '#F3F4F6', text: '#6B7280' }] : []),
-        ].map(s => (
-          <div key={s.title} className="bg-card rounded-xl border border-border shadow-sm p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center font-serif text-2xl font-bold"
-              style={{ backgroundColor: s.bg, color: s.text }}>
-              {s.value}
+      {/* Summary cards — each is a button. Percentages are out of the full
+          tracked team for the chosen day. Click Attended or Absent to see
+          exactly who is in that group in the list below. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {([
+          { key: 'all', title: 'Everyone', value: headcount, sub: 'tracked team', bg: '#F3F4F6', text: '#374151', ring: '#9CA3AF' },
+          { key: 'attended', title: 'Attended', value: attendedRows.length, sub: pct(attendedRows.length), bg: '#ECFDF5', text: '#059669', ring: '#10B981' },
+          { key: 'absent', title: 'Absent', value: absentRows.length, sub: pct(absentRows.length), bg: '#FEF2F2', text: '#DC2626', ring: '#EF4444' },
+        ] as const).map(c => (
+          <button key={c.key} onClick={() => setGroupFilter(c.key)}
+            className="bg-card rounded-xl border shadow-sm p-5 flex items-center gap-4 text-left transition-all hover:shadow-md"
+            style={{ borderColor: groupFilter === c.key ? c.ring : undefined, boxShadow: groupFilter === c.key ? `0 0 0 2px ${c.ring}33` : undefined }}
+            aria-pressed={groupFilter === c.key}>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center font-serif text-2xl font-bold shrink-0"
+              style={{ backgroundColor: c.bg, color: c.text }}>
+              {c.value}
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground">{s.title}</p>
-              <p className="text-xs text-muted-foreground">
-                {percentBase > 0 ? `${Math.round((s.value / percentBase) * 100)}%` : '—'}
-              </p>
+              <p className="text-sm font-semibold text-foreground">{c.title}</p>
+              <p className="text-xs text-muted-foreground">{c.sub}</p>
             </div>
-          </div>
+          </button>
         ))}
       </div>
+      <p className="text-xs text-muted-foreground -mt-2">
+        Present {breakdown.present} · Work from home {breakdown.wfh} · Half day {breakdown.halfDay}
+        {breakdown.onLeave > 0 ? ` · On leave ${breakdown.onLeave}` : ''}. Anyone who hasn't logged in counts as absent.
+      </p>
 
       {/* Daily log */}
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="p-5 border-b border-border flex items-center gap-4">
+        <div className="p-5 border-b border-border flex items-center gap-4 flex-wrap">
           <Calendar size={18} className="text-muted-foreground" />
-          <h3 className="font-serif text-lg font-semibold text-foreground">Daily Attendance Log</h3>
+          <h3 className="font-serif text-lg font-semibold text-foreground">
+            {groupFilter === 'attended' ? 'Who attended' : groupFilter === 'absent' ? 'Who is absent' : 'Daily Attendance Log'}
+          </h3>
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Date:</span>
-            <select value={dateFilter} onChange={e => setDateFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none">
-              <option value="">All dates</option>
-              {datesAvailable.map(d => <option key={d}>{d}</option>)}
-            </select>
+            <input type="date" value={dateFilter} max={todayIso}
+              onChange={e => e.target.value && setDateFilter(e.target.value)}
+              className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none" />
           </div>
         </div>
+        {isSunday && (
+          <div className="px-5 py-2.5 text-xs bg-muted/40 text-muted-foreground border-b border-border">
+            Sunday is the weekly off — absent numbers don't apply to this day.
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px]">
             <thead>
               <tr className="border-b border-border bg-muted/20">
-                {['Employee', 'Date', 'Check In', 'Check Out', 'Working Hours', 'Status'].map(h => (
+                {['Employee', 'Check In', 'Check Out', 'Working Hours', 'Status'].map(h => (
                   <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map(rec => {
-                const ss = statusStyle[rec.status]
+              {shownRows.map(row => {
+                const style = rowStyle[row.status]
+                const zone = timeZoneForLocation(row.employee.location)
                 return (
-                  <tr key={rec.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+                  <tr key={row.employee.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                           style={{ backgroundColor: `${navy}14`, color: navy }}>
-                          {rec.employeeName.split(' ').map(n => n[0]).join('')}
+                          {row.employee.name.split(' ').map(n => n[0]).join('')}
                         </div>
-                        <span className="text-sm font-semibold text-foreground">{rec.employeeName}</span>
+                        <div>
+                          <span className="text-sm font-semibold text-foreground">{row.employee.name}</span>
+                          <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{zone === 'Asia/Dubai' ? 'Dubai' : 'India'}</span>
+                        </div>
                       </div>
                     </td>
-                    <td className="px-5 py-4 text-sm text-muted-foreground">{rec.date}</td>
-                    <td className="px-5 py-4 text-sm font-medium text-foreground">{rec.checkIn || '—'}</td>
-                    <td className="px-5 py-4 text-sm font-medium text-foreground">{rec.checkOut || '—'}</td>
-                    <td className="px-5 py-4 text-sm text-muted-foreground">{workHours(rec.checkIn, rec.checkOut)}</td>
+                    <td className="px-5 py-4 text-sm font-medium text-foreground" title={row.checkIn ? zoneLabel(zone) : undefined}>{row.checkIn ? formatClock(row.checkIn) : '—'}</td>
+                    <td className="px-5 py-4 text-sm font-medium text-foreground" title={row.checkOut ? zoneLabel(zone) : undefined}>{row.checkOut ? formatClock(row.checkOut) : '—'}</td>
+                    <td className="px-5 py-4 text-sm text-muted-foreground">{workHours(row.checkIn, row.checkOut)}</td>
                     <td className="px-5 py-4">
-                      <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: ss.bg, color: ss.text }}>{ss.label}</span>
+                      <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: style.bg, color: style.text }}>{style.label}</span>
+                      {row.note && <span className="ml-2 text-xs text-muted-foreground">{row.note}</span>}
                     </td>
                   </tr>
                 )
               })}
-              {filtered.length === 0 && (
-                <tr><td colSpan={6} className="text-center py-10 text-sm text-muted-foreground">No records for selected date.</td></tr>
+              {shownRows.length === 0 && (
+                <tr><td colSpan={5} className="text-center py-10 text-sm text-muted-foreground">
+                  {groupFilter === 'absent' ? 'Nobody is absent on this day.' : groupFilter === 'attended' ? 'Nobody has logged in on this day yet.' : 'No employees to show.'}
+                </td></tr>
               )}
             </tbody>
           </table>
@@ -339,10 +365,11 @@ export default function AttendanceHR({ employees, attendance, onAttendanceUpdate
                   </div>
                 )
               }
-              const presentCount = dayRecords.filter(r => r.status !== 'absent').length
-              // Out of the whole tracked team, not just whoever got marked.
-              const headcount = Math.max(trackedEmployees.length, dayRecords.length)
-              const rate = presentCount / headcount
+              // Out of the whole tracked team: anyone who didn't log in is absent.
+              const rows = buildDayRows(employees, dateStr, records, leaves)
+              const presentCount = rows.filter(r => isAttended(r.status)).length
+              const headcount = rows.length
+              const rate = headcount > 0 ? presentCount / headcount : 0
               const bucket = rate >= 0.85 ? 0 : rate >= 0.7 ? 1 : 2
               const col = HEATMAP_COLORS[bucket]
               return (

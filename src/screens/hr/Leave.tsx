@@ -36,7 +36,7 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [showApplyForm, setShowApplyForm] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [form, setForm] = useState({ employeeName: '', type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '' })
+  const [form, setForm] = useState({ employeeName: '', type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '', halfDay: false })
   const [saveError, setSaveError] = useState('')
 
   const handle = async (id: string, action: 'approved' | 'rejected') => {
@@ -54,7 +54,7 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
     setSaveError('')
     const start = new Date(form.startDate)
     const end = new Date(form.endDate)
-    const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+    const days = form.halfDay ? 0.5 : Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
     const emp = employees.find(e => e.name === form.employeeName)
     // Who this leave belongs to (and who has to act on it) is the target
     // employee's actual job title, not the fact that HR is the one filling
@@ -80,6 +80,7 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
       startDate: form.startDate,
       endDate: form.endDate,
       days,
+      halfDay: form.halfDay,
       reason: form.reason,
       status: 'pending',
       appliedOn: new Date().toISOString().split('T')[0],
@@ -89,7 +90,7 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
     try {
       await onLeaveUpdate([newLeave, ...leaves])
       setShowApplyForm(false)
-      setForm({ employeeName: '', type: 'Sick', startDate: '', endDate: '', reason: '' })
+      setForm({ employeeName: '', type: 'Sick', startDate: '', endDate: '', reason: '', halfDay: false })
       setTab('requests')
       setFilterStatus('pending')
     } catch (err) {
@@ -167,19 +168,23 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
             <div className="hidden sm:block" />
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Start Date *</label>
-              <input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))}
+              <input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value, ...(p.halfDay ? { endDate: e.target.value } : {}) }))}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">End Date *</label>
-              <input type="date" value={form.endDate} onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))}
+              <input type="date" value={form.endDate} disabled={form.halfDay} onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
+              <label className="flex items-center gap-2 mt-2 text-xs text-muted-foreground cursor-pointer select-none">
+                <input type="checkbox" checked={form.halfDay} onChange={e => setForm(p => ({ ...p, halfDay: e.target.checked, endDate: e.target.checked ? p.startDate : p.endDate }))} />
+                Half day only (counts as 0.5 day)
+              </label>
             </div>
             {form.startDate && form.endDate && (
               <div className="flex items-end pb-2">
                 <p className="text-sm text-muted-foreground">
                   <strong className="text-foreground">
-                    {Math.max(1, Math.round((new Date(form.endDate).getTime() - new Date(form.startDate).getTime()) / 86400000) + 1)} day(s)
+                    {form.halfDay ? '0.5' : Math.max(1, Math.round((new Date(form.endDate).getTime() - new Date(form.startDate).getTime()) / 86400000) + 1)} day(s)
                   </strong>
                 </p>
               </div>
@@ -275,7 +280,7 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
                         <span className="text-xs text-muted-foreground">·</span>
                         <Calendar size={11} className="text-muted-foreground" />
                         <span className="text-xs text-muted-foreground">{req.startDate} → {req.endDate}</span>
-                        <span className="text-xs font-semibold text-foreground">({req.days}d)</span>
+                        <span className="text-xs font-semibold text-foreground">({req.days}d{req.halfDay ? ", half day" : ""})</span>
                       </div>
                     </div>
                     <span className="px-2.5 py-1 rounded-full text-xs font-medium capitalize shrink-0"
@@ -381,7 +386,7 @@ export default function Leave({ role, leaves, onLeaveUpdate, employees }: LeaveP
                           <td className="px-5 py-3 font-medium">{l.employeeName}</td>
                           <td className="px-5 py-3">{l.type}</td>
                           <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">{l.startDate} — {l.endDate}</td>
-                          <td className="px-5 py-3">{l.days}</td>
+                          <td className="px-5 py-3">{l.days}{l.halfDay ? " (half day)" : ""}</td>
                           <td className="px-5 py-3">
                             <span className="px-2.5 py-1 rounded-full text-xs font-medium capitalize"
                               style={{ backgroundColor: statusStyle[l.status].bg, color: statusStyle[l.status].text }}>{l.status}</span>

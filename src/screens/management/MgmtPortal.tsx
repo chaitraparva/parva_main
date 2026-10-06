@@ -1,3 +1,5 @@
+import ClockCard from '../../components/ClockCard'
+import { buildDayRows, isAbsentGroup } from '../../lib/attendanceStatus'
 import { useState } from 'react'
 import type { LeaveRequest, PayrollRecord, Employee, EmployeeTicket, ExitRecord, AttendanceRecord } from '../../types'
 import { sortByRosterOrder } from '../../lib/orgOrder'
@@ -39,10 +41,11 @@ interface Props {
   tickets: EmployeeTicket[]
   exits: ExitRecord[]
   attendance: AttendanceRecord[]
+  onAttendanceRefresh: () => Promise<void>
   currentEmployee?: Employee
 }
 
-export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: payrollProp, tickets: employeeTickets, exits: exitRecords, attendance, currentEmployee }: Props) {
+export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: payrollProp, tickets: employeeTickets, exits: exitRecords, attendance, onAttendanceRefresh, currentEmployee }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
 
   // Leave approvals — management only ever acts on HR's own leave requests
@@ -72,11 +75,15 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
   // tier, including CRM's) or marked absent in today's attendance. This is
   // how a CRM employee's leave is reflected to the CEO: as an absence, not
   // as something to approve.
-  const todayStr = new Date().toISOString().slice(0, 10)
-  const absentTodayIds = new Set([
-    ...leaves.filter(l => l.status === 'approved' && l.startDate <= todayStr && l.endDate >= todayStr).map(l => l.employeeId),
-    ...attendance.filter(a => a.date === todayStr && a.status === 'absent').map(a => a.employeeId),
-  ])
+  // Everyone tracked who hasn't logged in today counts as absent (there is no
+  // "not marked" state), plus anyone on approved leave. Uses the same rules as
+  // the HR Attendance screen — see lib/attendanceStatus.ts.
+  const todayStr = new Date().toLocaleDateString('en-CA')
+  const absentTodayIds = new Set(
+    buildDayRows(employees, todayStr, attendance, leaves)
+      .filter(r => isAbsentGroup(r.status))
+      .map(r => r.employee.id),
+  )
   const absentToday = sortByRosterOrder(employees.filter(e => absentTodayIds.has(e.id)))
 
   // Overview stats
@@ -115,6 +122,9 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
       {/* OVERVIEW */}
       {tab === 'overview' && (
         <div className="space-y-6">
+          {currentEmployee && (
+            <ClockCard employeeId={currentEmployee.id} employees={employees} attendance={attendance} onRefresh={onAttendanceRefresh} />
+          )}
           {/* KPI Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
@@ -145,7 +155,7 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Absent Today</p>
               <p className="text-3xl font-bold font-serif" style={{ color: absentToday.length > 0 ? '#D97706' : '#059669' }}>{absentToday.length}</p>
-              <p className="text-xs text-muted-foreground mt-1">On approved leave or marked absent</p>
+              <p className="text-xs text-muted-foreground mt-1">Not logged in, or on approved leave</p>
             </div>
           </div>
 
@@ -293,7 +303,7 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
                       <div><span className="font-medium text-foreground">{l.type}</span><br />Type</div>
                       <div><span className="font-medium text-foreground">{l.startDate}</span><br />From</div>
                       <div><span className="font-medium text-foreground">{l.endDate}</span><br />To</div>
-                      <div><span className="font-medium text-foreground">{l.days} days</span><br />Duration</div>
+                      <div><span className="font-medium text-foreground">{l.days} {l.halfDay ? "day (half day)" : "days"}</span><br />Duration</div>
                     </div>
                     <p className="text-sm mt-2 text-muted-foreground italic">"{l.reason}"</p>
                     <div className="mt-3 flex gap-2">
@@ -337,7 +347,7 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
                         <td className="py-2.5">{l.employeeName}</td>
                         <td className="py-2.5">{l.type}</td>
                         <td className="py-2.5">{l.startDate} — {l.endDate}</td>
-                        <td className="py-2.5">{l.days}</td>
+                        <td className="py-2.5">{l.days}{l.halfDay ? " (half day)" : ""}</td>
                         <td className="py-2.5"><StatusBadge status={l.status} /></td>
                       </tr>
                     ))}

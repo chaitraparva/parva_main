@@ -1,5 +1,8 @@
 import { Users, Calendar, CreditCard, TicketIcon, Receipt, DoorOpen, AlertCircle, CheckCircle, Clock, TrendingUp, Building2, UserCheck } from 'lucide-react'
 import type { Employee, LeaveRequest, PayrollRecord, AttendanceRecord, EmployeeTicket, ExpenseClaim, ExitRecord } from '../../types'
+import ClockCard from '../../components/ClockCard'
+import { buildDayRows, isAbsentGroup, isAttended } from '../../lib/attendanceStatus'
+import { nowInZone, timeZoneForLocation } from '../../lib/clock'
 
 interface OnboardingCandidateLite { id: string; onboardingProgress: number }
 
@@ -14,12 +17,13 @@ interface Props {
   exits: ExitRecord[]
   onboarding: OnboardingCandidateLite[]
   currentEmployee?: Employee
+  onAttendanceRefresh: () => Promise<void>
 }
 
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
 
-export default function HRDashboard({ navigate, employees, leaves, payroll, attendance, tickets, expenses, exits, onboarding, currentEmployee }: Props) {
+export default function HRDashboard({ navigate, employees, leaves, payroll, attendance, tickets, expenses, exits, onboarding, currentEmployee, onAttendanceRefresh }: Props) {
   const firstName = currentEmployee?.name?.split(' ')[0] || 'there'
   // A manager's or finance employee's own leave request lands with HR
   // directly. CRM leave is decided entirely by the employee's line manager
@@ -32,25 +36,20 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
   const urgentTickets = tickets.filter(t => t.priority === 'Urgent' && t.status !== 'Resolved' && t.status !== 'Closed')
   const activeOnboarding = onboarding.filter(c => c.onboardingProgress < 100).length
   const activeExits = exits.filter(e => e.status !== 'Completed').length
-  // Same exclusion list as AttendanceHR.tsx -- these IDs aren't tracked for
-  // attendance at all, so they're left out of both the numerator and the
-  // denominator here too, for the same reason that screen was fixed.
-  const ATTENDANCE_EXCLUDED_IDS = ['DF230001', 'DF230002', 'PA230045'] // Neelesh H P, Akshita Raturi, Chaitra
-  const trackedEmployees = employees.filter(e => !ATTENDANCE_EXCLUDED_IDS.includes(e.id))
-  const todayIso = new Date().toISOString().slice(0, 10)
-  const todayAttendance = attendance.filter(a => a.date === todayIso && !ATTENDANCE_EXCLUDED_IDS.includes(a.employeeId))
-  const presentToday = todayAttendance.filter(a => a.status === 'present').length
-  // Percentages/bar widths below are out of the full tracked headcount for
-  // today, not however many attendance records happen to exist yet --
-  // otherwise 2 people marked present out of 50 employees shows as "100%".
-  const attendancePercentBase = trackedEmployees.length
-  const notMarkedToday = Math.max(0, trackedEmployees.length - todayAttendance.length)
+  // Same rules as the Attendance screen (lib/attendanceStatus.ts): out of the
+  // full tracked team, and anyone who hasn't logged in counts as Absent --
+  // there is no "not marked" bucket.
+  const todayIso = nowInZone(timeZoneForLocation(currentEmployee?.location)).date
+  const todayRows = buildDayRows(employees, todayIso, attendance, leaves)
+  const attendancePercentBase = todayRows.length
+  const attendedToday = todayRows.filter(r => isAttended(r.status))
+  const absentToday = todayRows.filter(r => isAbsentGroup(r.status))
 
   const QUICK_ACTIONS = [
     { label: 'Employee Directory', screen: 'directory', icon: Users, color: navy, count: employees.length, sub: 'employees' },
     { label: 'Leave Requests', screen: 'leave', icon: UserCheck, color: '#D97706', count: pendingLeave, sub: 'pending' },
     { label: 'Payroll', screen: 'payroll-hr', icon: CreditCard, color: '#0F766E', count: pendingPayroll, sub: 'to process' },
-    { label: 'Attendance', screen: 'attendance-hr', icon: Calendar, color: navy, count: presentToday, sub: 'present today' },
+    { label: 'Attendance', screen: 'attendance-hr', icon: Calendar, color: navy, count: attendedToday.length, sub: 'attended today' },
     { label: 'Expense Claims', screen: 'expense-hr', icon: Receipt, color: '#7C3AED', count: pendingExpenses, sub: 'pending' },
     { label: 'Employee Tickets', screen: 'tickets-hr', icon: TicketIcon, color: '#DC2626', count: openTickets, sub: 'open' },
     { label: 'Onboarding', screen: 'onboarding-hr', icon: Building2, color: gold, count: activeOnboarding, sub: 'in progress' },
@@ -61,6 +60,10 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
 
   return (
     <div className="space-y-6">
+      {currentEmployee && (
+        <ClockCard employeeId={currentEmployee.id} employees={employees} attendance={attendance} onRefresh={onAttendanceRefresh} />
+      )}
+
       {/* Welcome banner */}
       <div className="rounded-2xl overflow-hidden" style={{ background: `linear-gradient(135deg, ${navy} 0%, #2d4a7a 100%)` }}>
         <div className="px-8 py-7 flex items-center justify-between">
@@ -142,16 +145,18 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
         {/* Today's attendance snapshot */}
         <div className="bg-card rounded-xl border border-border shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-serif text-base font-semibold text-foreground">Today's Attendance</h3>
+            <div>
+              <h3 className="font-serif text-base font-semibold text-foreground">Today's Attendance</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">{attendedToday.length} of {attendancePercentBase} attended ({attendancePercentBase > 0 ? Math.round((attendedToday.length / attendancePercentBase) * 100) : 0}%)</p>
+            </div>
             <button onClick={() => navigate('attendance-hr')} className="text-xs font-medium" style={{ color: gold }}>View all →</button>
           </div>
           <div className="space-y-2.5">
             {[
-              { label: 'Present', count: todayAttendance.filter(a => a.status === 'present').length, color: '#10B981', bg: '#ECFDF5' },
-              { label: 'Late', count: todayAttendance.filter(a => a.status === 'late').length, color: '#F59E0B', bg: '#FFFBEB' },
-              { label: 'Absent', count: todayAttendance.filter(a => a.status === 'absent').length, color: '#EF4444', bg: '#FEF2F2' },
-              { label: 'Half Day', count: todayAttendance.filter(a => a.status === 'half-day').length, color: '#8B5CF6', bg: '#F5F3FF' },
-              { label: 'Not Marked', count: notMarkedToday, color: '#6B7280', bg: '#F3F4F6' },
+              { label: 'Present', count: todayRows.filter(r => r.status === 'present').length, color: '#10B981', bg: '#ECFDF5' },
+              { label: 'Work From Home', count: todayRows.filter(r => r.status === 'wfh').length, color: '#0EA5E9', bg: '#F0F9FF' },
+              { label: 'Half Day', count: todayRows.filter(r => r.status === 'half-day').length, color: '#8B5CF6', bg: '#F5F3FF' },
+              { label: 'Absent', count: absentToday.length, color: '#EF4444', bg: '#FEF2F2' },
             ].map(s => (
               <div key={s.label} className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: s.bg }}>

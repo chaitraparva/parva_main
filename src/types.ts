@@ -79,6 +79,9 @@ export interface AttendanceRecord {
   checkIn: string
   checkOut: string
   status: 'present' | 'absent' | 'late' | 'half-day'
+  // Which button was pressed at login: the normal Login (office) or the
+  // separate Work From Home button. Older rows default to 'office'.
+  workMode?: 'office' | 'wfh'
 }
 
 export interface LeaveRequest {
@@ -90,6 +93,7 @@ export interface LeaveRequest {
   startDate: string
   endDate: string
   days: number
+  halfDay?: boolean            // true = half a day (days is 0.5)
   reason: string
   status: 'pending' | 'approved' | 'rejected'
   appliedOn: string

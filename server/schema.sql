@@ -100,6 +100,7 @@ CREATE TABLE leave_requests (
   start_date        DATE NOT NULL,
   end_date          DATE NOT NULL,
   days              NUMERIC(4, 1) NOT NULL,
+  half_day          BOOLEAN NOT NULL DEFAULT false,
   reason            TEXT NOT NULL DEFAULT '',
   status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   submitted_by_role TEXT NOT NULL CHECK (submitted_by_role IN ('crm', 'manager', 'hr', 'management', 'finance')),
@@ -151,6 +152,7 @@ CREATE TABLE attendance_records (
   check_in     TEXT NOT NULL DEFAULT '',
   check_out    TEXT NOT NULL DEFAULT '',
   status       TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late', 'half-day')),
+  work_mode    TEXT NOT NULL DEFAULT 'office' CHECK (work_mode IN ('office', 'wfh')),
   UNIQUE (employee_id, date)
 );
 

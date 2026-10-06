@@ -28,6 +28,7 @@ import {
   notificationsRouter,
   onboardingCandidatesRouter,
 } from './routes/resources.js'
+import { attendanceClockRouter } from './routes/attendance-clock.js'
 
 const app = express()
 
@@ -64,6 +65,8 @@ app.use('/api/expense-receipts', expenseReceiptsRouter)
 app.use('/api/profile-photo', profilePhotoRouter)
 app.use('/api/leave-requests', leaveRequestsRouter)
 app.use('/api/payroll-records', payrollRecordsRouter)
+// Must be registered BEFORE the generic /:id routes below it.
+app.use('/api/attendance-records', attendanceClockRouter)
 app.use('/api/attendance-records', attendanceRouter)
 app.use('/api/timesheet-entries', timesheetEntriesRouter)
 app.use('/api/expense-claims', expenseClaimsRouter)

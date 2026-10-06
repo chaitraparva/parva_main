@@ -222,6 +222,7 @@ export interface NewLeaveRequestInput {
   startDate: string
   endDate: string
   days: number
+  halfDay?: boolean
   reason: string
   submittedByRole: Role
   pendingWith: Role | 'done'
@@ -289,6 +290,25 @@ export type RawAttendanceRecord = Omit<AttendanceRecord, 'employeeName'>
 export async function fetchAttendanceRecords(): Promise<RawAttendanceRecord[]> {
   const data = await request<{ attendance_records: RawAttendanceRecord[] }>('/api/attendance-records', { method: 'GET' })
   return data.attendance_records
+}
+
+// Login / Logout / Work From Home. The SERVER stamps the time (in the
+// employee's own Dubai or India office time) — nothing about the time is sent
+// from the browser, so a wrong laptop clock can't produce a wrong record.
+export async function clockIn(mode: 'office' | 'wfh'): Promise<RawAttendanceRecord> {
+  const data = await request<{ attendance_record: RawAttendanceRecord }>('/api/attendance-records/check-in', {
+    method: 'POST',
+    body: JSON.stringify({ mode }),
+  })
+  return data.attendance_record
+}
+
+export async function clockOut(): Promise<RawAttendanceRecord> {
+  const data = await request<{ attendance_record: RawAttendanceRecord }>('/api/attendance-records/check-out', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+  return data.attendance_record
 }
 
 // ─────────────────────── Timesheet entries ───────────────────────

@@ -9,7 +9,7 @@ import { crudRouter } from '../lib/crud.js'
 export const leaveRequestsRouter = crudRouter({
   table: 'leave_requests',
   allowedColumns: [
-    'employeeId', 'type', 'startDate', 'endDate', 'days', 'reason',
+    'employeeId', 'type', 'startDate', 'endDate', 'days', 'halfDay', 'reason',
     'status', 'submittedByRole', 'pendingWith', 'decidedBy', 'decidedAt',
   ],
   // Anyone can submit their own leave request (POST). PATCH (moving a
@@ -36,7 +36,7 @@ export const payrollRecordsRouter = crudRouter({
 
 export const attendanceRouter = crudRouter({
   table: 'attendance_records',
-  allowedColumns: ['employeeId', 'date', 'checkIn', 'checkOut', 'status'],
+  allowedColumns: ['employeeId', 'date', 'checkIn', 'checkOut', 'status', 'workMode'],
   // One row per employee per day — the default 500-row cap only covered the
   // last ~2 weeks, so older months vanished from the HR heatmap/log.
   listLimit: 20000,

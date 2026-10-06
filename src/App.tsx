@@ -291,6 +291,7 @@ export default function App() {
       startDate: l.startDate,
       endDate: l.endDate,
       days: l.days,
+      halfDay: l.halfDay,
       reason: l.reason,
       status: l.status,
       submittedByRole: l.submittedByRole,
@@ -306,6 +307,7 @@ export default function App() {
           startDate: l.startDate,
           endDate: l.endDate,
           days: l.days,
+          halfDay: !!l.halfDay,
           reason: l.reason,
           submittedByRole: l.submittedByRole,
           pendingWith: l.pendingWith,
@@ -442,6 +444,11 @@ export default function App() {
         // Offline/unreachable — stay on the optimistic state.
       }
     }
+  }
+  // After the server-stamped Login / Logout / Work From Home buttons (see
+  // components/ClockCard.tsx) — re-read attendance so every screen is current.
+  const refreshAttendance = async () => {
+    setRawAttendance(await api.fetchAttendanceRecords())
   }
   // Timesheets don't follow the same "diff a whole array" shape as the
   // modules above — MyTimesheet.tsx saves exactly one day's entry at a time.
@@ -1032,6 +1039,7 @@ export default function App() {
       endDate: toDateOnly(r.endDate),
       appliedOn: toDateOnly(r.appliedOn),
       days: Number(r.days),
+      halfDay: !!r.halfDay,
     }
   })
 
@@ -1226,7 +1234,7 @@ export default function App() {
             employeeId={employeeId}
             employees={employees}
             attendance={attendance}
-            onAttendanceUpdate={onAttendanceUpdate}
+            onAttendanceRefresh={refreshAttendance}
           />
         )
       case 'manager-portal':
@@ -1236,7 +1244,7 @@ export default function App() {
             employeeId={employeeId}
             employees={employees}
             attendance={attendance}
-            onAttendanceUpdate={onAttendanceUpdate}
+            onAttendanceRefresh={refreshAttendance}
             payroll={payroll} onPayrollUpdate={onPayrollUpdate}
           />
         )
@@ -1249,6 +1257,7 @@ export default function App() {
             tickets={tickets}
             exits={exits}
             attendance={attendance}
+            onAttendanceRefresh={refreshAttendance}
             currentEmployee={currentEmployee}
           />
         )
@@ -1262,7 +1271,7 @@ export default function App() {
             currentEmployee={currentEmployee}
             employeeId={employeeId}
             attendance={attendance}
-            onAttendanceUpdate={onAttendanceUpdate}
+            onAttendanceRefresh={refreshAttendance}
           />
         )
       case 'hr-dashboard':
@@ -1271,7 +1280,7 @@ export default function App() {
             navigate={navigate}
             employees={employees} leaves={leaves} payroll={payroll} attendance={attendance}
             tickets={tickets} expenses={expenses} exits={exits} onboarding={onboarding}
-            currentEmployee={currentEmployee}
+            currentEmployee={currentEmployee} onAttendanceRefresh={refreshAttendance}
           />
         )
       case 'recruitment':
@@ -1283,7 +1292,7 @@ export default function App() {
       case 'org-chart':
         return <OrgChart employees={employees} />
       case 'attendance-hr':
-        return <AttendanceHR employees={employees} attendance={attendance} onAttendanceUpdate={onAttendanceUpdate} />
+        return <AttendanceHR employees={employees} attendance={attendance} leaves={leaves} currentEmployeeId={employeeId} onAttendanceUpdate={onAttendanceUpdate} onAttendanceRefresh={refreshAttendance} />
       case 'my-timesheet':
         return <MyTimesheet employeeId={employeeId} employees={employees} timesheet={timesheet} onSaveEntry={onSaveTimesheetEntry} onDeleteEntry={onDeleteTimesheetEntry} />
       case 'team-timesheet':
@@ -1307,7 +1316,7 @@ export default function App() {
       case 'profile':
         return <Profile employeeId={employeeId} employees={employees} onEmployeesUpdate={onEmployeesUpdate} payroll={payroll} attendance={attendance} leaves={leaves} />
       default:
-        return <HRDashboard navigate={navigate} employees={employees} leaves={leaves} payroll={payroll} attendance={attendance} tickets={tickets} expenses={expenses} exits={exits} onboarding={onboarding} currentEmployee={currentEmployee} />
+        return <HRDashboard navigate={navigate} employees={employees} leaves={leaves} payroll={payroll} attendance={attendance} tickets={tickets} expenses={expenses} exits={exits} onboarding={onboarding} currentEmployee={currentEmployee} onAttendanceRefresh={refreshAttendance} />
     }
   }
 

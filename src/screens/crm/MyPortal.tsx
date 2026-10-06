@@ -6,6 +6,7 @@ import { downloadExcel } from '../../lib/excel'
 import * as api from '../../lib/api'
 import { computeLeaveBalance, LEAVE_POLICY } from '../../lib/leaveBalance'
 import DocumentsPanel from '../../components/DocumentsPanel'
+import ClockCard from '../../components/ClockCard'
 
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
@@ -52,7 +53,7 @@ interface Props {
   employeeId: string
   employees: Employee[]
   attendance: AttendanceRecord[]
-  onAttendanceUpdate: (next: AttendanceRecord[]) => Promise<void>
+  onAttendanceRefresh: () => Promise<void>
   tickets: EmployeeTicket[]
   onTicketsUpdate: (next: EmployeeTicket[]) => Promise<void>
   onAddTicketComment: (ticketId: string, text: string) => Promise<void>
@@ -72,11 +73,11 @@ function blankRow(): DraftRow {
   return { id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, date: '', category: 'Travel', description: '', amount: '', file: null, previewUrl: null }
 }
 
-export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate: _onExpensesUpdate, onExpensesRefetch, employeeId, employees, attendance: attendanceRecords, onAttendanceUpdate, tickets, onTicketsUpdate, onAddTicketComment }: Props) {
+export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate: _onExpensesUpdate, onExpensesRefetch, employeeId, employees, attendance: attendanceRecords, onAttendanceRefresh, tickets, onTicketsUpdate, onAddTicketComment }: Props) {
   const [tab, setTab] = useState<Tab>('leave')
   const [leaveFlash, setLeaveFlash] = useState(false)
   const [leaveError, setLeaveError] = useState('')
-  const [leaveForm, setLeaveForm] = useState({ type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '' })
+  const [leaveForm, setLeaveForm] = useState({ type: 'Sick' as typeof LEAVE_TYPES[number], startDate: '', endDate: '', reason: '', halfDay: false })
 
   const myLeaves = leaves.filter(l => l.employeeId === employeeId)
   const myAttendance = attendanceRecords.filter(r => r.employeeId === employeeId)
@@ -85,52 +86,6 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
   const meDepartment = me?.department || ''
   const myBalance = me ? computeLeaveBalance(me, leaves) : null
 
-  // Self-service attendance — until biometric attendance is wired up,
-  // everyone marks their own day manually. Same create-or-update-today's-row
-  // pattern as AttendanceHR.tsx's markAttendance(), scoped to just this
-  // employee and today.
-  const todayIso = new Date().toISOString().slice(0, 10)
-  const myTodayAttendance = myAttendance.find(r => r.date === todayIso)
-  // Seeded once from whatever's already on today's record (if any), so
-  // re-marking the same day defaults to what was last saved instead of
-  // silently resetting to "present".
-  const [selfAttForm, setSelfAttForm] = useState(() => {
-    const existing = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
-    return existing
-      ? { checkIn: existing.checkIn, checkOut: existing.checkOut, status: existing.status }
-      : { checkIn: '09:00', checkOut: '18:00', status: 'present' as AttendanceRecord['status'] }
-  })
-  const [selfAttFlash, setSelfAttFlash] = useState(false)
-  const [selfAttError, setSelfAttError] = useState('')
-  const [selfAttSaving, setSelfAttSaving] = useState(false)
-
-  async function markMyAttendance() {
-    const existing = attendanceRecords.find(r => r.employeeId === employeeId && r.date === todayIso)
-    setSelfAttError('')
-    setSelfAttSaving(true)
-    try {
-      if (existing) {
-        await onAttendanceUpdate(attendanceRecords.map(r => r.id === existing.id ? { ...r, ...selfAttForm } : r))
-      } else {
-        const newRec: AttendanceRecord = {
-          id: `att-${Date.now()}`,
-          employeeId,
-          employeeName: meName,
-          date: todayIso,
-          ...selfAttForm,
-        }
-        await onAttendanceUpdate([...attendanceRecords, newRec])
-      }
-      setSelfAttFlash(true)
-      setTimeout(() => setSelfAttFlash(false), 3000)
-    } catch (err) {
-      // Show the real server error instead of a false "saved" message that
-      // silently reverts — see the comment on onAttendanceUpdate in App.tsx.
-      setSelfAttError(err instanceof Error ? err.message : 'Something went wrong while saving. Please try again.')
-    } finally {
-      setSelfAttSaving(false)
-    }
-  }
 
   // Expenses — a structured, Excel-style sheet: add as many rows as needed,
   // attach a receipt photo per row, see the running total, then submit the
@@ -291,7 +246,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
     setLeaveError('')
     const start = new Date(leaveForm.startDate)
     const end = new Date(leaveForm.endDate)
-    const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+    const days = leaveForm.halfDay ? 0.5 : Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
     const newLeave: LeaveRequest = {
       id: `lv-${Date.now()}`,
       employeeId,
@@ -301,6 +256,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
       startDate: leaveForm.startDate,
       endDate: leaveForm.endDate,
       days,
+      halfDay: leaveForm.halfDay,
       reason: leaveForm.reason,
       status: 'pending',
       appliedOn: new Date().toISOString().slice(0, 10),
@@ -309,7 +265,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
     }
     try {
       await onLeaveUpdate([...leaves, newLeave])
-      setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '' })
+      setLeaveForm({ type: 'Sick', startDate: '', endDate: '', reason: '', halfDay: false })
       setLeaveFlash(true)
       setTimeout(() => setLeaveFlash(false), 4000)
     } catch (err) {
@@ -447,7 +403,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
                 <input
                   type="date"
                   value={leaveForm.startDate}
-                  onChange={e => setLeaveForm(f => ({ ...f, startDate: e.target.value }))}
+                  onChange={e => setLeaveForm(f => ({ ...f, startDate: e.target.value, ...(f.halfDay ? { endDate: e.target.value } : {}) }))}
                   className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none"
                 />
               </div>
@@ -456,9 +412,14 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
                 <input
                   type="date"
                   value={leaveForm.endDate}
+                  disabled={leaveForm.halfDay}
                   onChange={e => setLeaveForm(f => ({ ...f, endDate: e.target.value }))}
                   className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none"
                 />
+                <label className="flex items-center gap-2 mt-2 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input type="checkbox" checked={leaveForm.halfDay} onChange={e => setLeaveForm(f => ({ ...f, halfDay: e.target.checked, endDate: e.target.checked ? f.startDate : f.endDate }))} />
+                  Half day only (counts as 0.5 day)
+                </label>
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Reason</label>
@@ -504,7 +465,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
                         <td className="py-2.5">{l.type}</td>
                         <td className="py-2.5">{l.startDate}</td>
                         <td className="py-2.5">{l.endDate}</td>
-                        <td className="py-2.5">{l.days}</td>
+                        <td className="py-2.5">{l.days}{l.halfDay ? " (half day)" : ""}</td>
                         <td className="py-2.5 max-w-[200px] truncate">{l.reason}</td>
                         <td className="py-2.5"><StatusBadge status={l.status} /></td>
                       </tr>
@@ -520,54 +481,7 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
       {/* MY ATTENDANCE TAB */}
       {tab === 'attendance' && (
         <div className="space-y-4">
-          {selfAttFlash && (
-            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
-              Today's attendance saved.
-            </div>
-          )}
-          {selfAttError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
-              {selfAttError}
-            </div>
-          )}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-            <h2 className="font-semibold text-base mb-1" style={{ color: navy }}>Mark Today's Attendance</h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              {myTodayAttendance ? `Already marked for today (${todayIso}) — update it below if needed.` : `Not yet marked for today (${todayIso}).`}
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Status</label>
-                <select
-                  value={selfAttForm.status}
-                  onChange={e => setSelfAttForm(p => ({ ...p, status: e.target.value as AttendanceRecord['status'] }))}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none"
-                >
-                  <option value="present">Present</option>
-                  <option value="late">Late</option>
-                  <option value="half-day">Half Day</option>
-                  <option value="absent">Absent</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Check In</label>
-                <input type="time" value={selfAttForm.checkIn} onChange={e => setSelfAttForm(p => ({ ...p, checkIn: e.target.value }))}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Check Out</label>
-                <input type="time" value={selfAttForm.checkOut} onChange={e => setSelfAttForm(p => ({ ...p, checkOut: e.target.value }))}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
-              </div>
-              <div className="flex items-end">
-                <button onClick={markMyAttendance} disabled={selfAttSaving}
-                  className="w-full px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
-                  style={{ background: navy }}>
-                  {selfAttSaving ? 'Saving…' : myTodayAttendance ? 'Update' : 'Mark Attendance'}
-                </button>
-              </div>
-            </div>
-          </div>
+          <ClockCard employeeId={employeeId} employees={employees} attendance={attendanceRecords} onRefresh={onAttendanceRefresh} />
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
             <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>My Attendance History</h2>
             <div className="overflow-x-auto">
