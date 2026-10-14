@@ -5,6 +5,7 @@
 // step with the server's timeZoneForLocation().
 
 export const HALF_DAY_BEFORE_HOUR = 15 // logging out before 3:00 PM local = Half Day
+export const LOGIN_CLOSES_HOUR = 14 // Log In / Work From Home disappear from 2:00 PM local
 
 export type OfficeZone = 'Asia/Dubai' | 'Asia/Kolkata'
 

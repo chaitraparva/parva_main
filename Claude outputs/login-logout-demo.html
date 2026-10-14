@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login / Logout Demo</title>
+<style>
+  :root { --navy:#1C2B4A; --gold:#C9A96E; --bg:#FAF8F5; --card:#fff; --border:#E7E2D8; --muted:#6B7280; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:#1f2937; padding:24px 16px 48px; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-family: Georgia, serif; color:var(--navy); font-size:26px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:14px; margin:0 0 20px; }
+  .panel { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:18px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .panel h2 { font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0 0 12px; font-weight:600; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  label { font-size:13px; color:var(--muted); }
+  select, input[type=range] { font:inherit; }
+  select { padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:#fff; }
+  input[type=range] { width:260px; max-width:100%; accent-color: var(--navy); }
+  .big { font-family: Georgia, serif; font-size:20px; color:var(--navy); font-weight:600; min-width:92px; }
+  .hint { font-size:12px; color:var(--muted); margin-top:8px; }
+
+  .card { background:#fff; border:1px solid var(--border); border-radius:14px; padding:20px; }
+  .card h3 { margin:0; font-size:16px; color:var(--navy); }
+  .clock { font-size:12px; color:var(--muted); margin-top:3px; }
+  .head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; }
+  .pill { font-size:12px; font-weight:600; padding:4px 10px; border-radius:999px; }
+  .pill.office { background:#ECFDF5; color:#047857; }
+  .pill.wfh { background:#F0F9FF; color:#0369A1; }
+  .btns { display:flex; gap:12px; flex-wrap:wrap; margin-top:16px; }
+  button { font:inherit; font-size:14px; font-weight:600; border-radius:9px; padding:10px 20px; cursor:pointer; border:1px solid transparent; }
+  .b-navy { background:var(--navy); color:#fff; }
+  .b-out { background:#fff; color:var(--navy); border-color:var(--border); }
+  .b-amber { background:#B45309; color:#fff; }
+  button:hover { opacity:.9; }
+  .confirm { margin-top:14px; background:#FFFBEB; border:1px solid #FDE68A; border-radius:12px; padding:14px; }
+  .confirm p { margin:0 0 10px; color:#78350F; font-weight:600; font-size:14px; }
+  .done { margin-top:14px; font-size:15px; }
+  .tag-present { color:#047857; font-weight:700; }
+  .tag-half { color:#6D28D9; font-weight:700; }
+  .reset { margin-top:14px; font-size:12px; color:var(--muted); background:none; border:none; padding:0; text-decoration:underline; font-weight:500; }
+
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.05em; padding:8px 6px; border-bottom:1px solid var(--border); }
+  td { padding:9px 6px; border-bottom:1px solid var(--border); }
+  tr:last-child td { border-bottom:none; }
+  .zone { font-size:10px; background:#F3F4F6; color:#4B5563; border-radius:4px; padding:2px 6px; margin-left:6px; }
+  .st { padding:3px 9px; border-radius:999px; font-size:11px; font-weight:600; }
+  .s-present{background:#ECFDF5;color:#047857} .s-wfh{background:#F0F9FF;color:#0369A1}
+  .s-half{background:#F5F3FF;color:#6D28D9} .s-abs{background:#FEF2F2;color:#B91C1C}
+  .steps { display:grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .step { border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:13px; background:#fff; }
+  .step b { display:block; color:var(--navy); margin-bottom:2px; }
+  .step.on { border-color:var(--gold); box-shadow:0 0 0 2px rgba(201,169,110,.25); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>How Login &amp; Logout works</h1>
+  <p class="sub">A try-it demo. Nothing here is saved &mdash; it just shows what each person sees on their own screen.</p>
+
+  <div class="panel">
+    <h2>Pretend you are&hellip;</h2>
+    <div class="row">
+      <label>Office:
+        <select id="office"><option value="IN">India (Bangalore)</option><option value="AE">Dubai</option></select>
+      </label>
+      <label>Time right now:</label>
+      <input type="range" id="slider" min="360" max="1260" step="15" value="540">
+      <span class="big" id="clockbig">9:00 AM</span>
+    </div>
+    <div class="hint" id="zonehint"></div>
+  </div>
+
+  <div class="steps" id="steps" style="margin-bottom:18px">
+    <div class="step" data-s="0"><b>1. Morning</b>Press Log In (office) or Work From Home. Time is stamped for you.</div>
+    <div class="step" data-s="1"><b>2. During the day</b>Card shows when you logged in.</div>
+    <div class="step" data-s="2"><b>3. Log Out</b>Before 3:00 PM = Half Day. After = Present.</div>
+  </div>
+
+  <div class="card" id="card"></div>
+
+  <div class="panel" style="margin-top:18px">
+    <h2>What HR sees for this person</h2>
+    <table>
+      <thead><tr><th>Employee</th><th>Check in</th><th>Check out</th><th>Status</th></tr></thead>
+      <tbody id="hr"></tbody>
+    </table>
+    <div class="hint">Anyone who never logs in shows as <b>Absent</b> &mdash; there is no &ldquo;Not marked&rdquo; any more.</div>
+  </div>
+</div>
+
+<script>
+  var HALF_BEFORE = 15 * 60;
+  var state = { mode: null, inAt: null, outAt: null, confirm: false };
+  var $ = function (id) { return document.getElementById(id); };
+
+  function fmt(mins) {
+    var h = Math.floor(mins / 60), m = mins % 60, s = h >= 12 ? 'PM' : 'AM';
+    return (h % 12 || 12) + ':' + (m < 10 ? '0' : '') + m + ' ' + s;
+  }
+  function now() { return Number($('slider').value); }
+  function zoneName() { return $('office').value === 'AE' ? 'Dubai time' : 'India time'; }
+  function zoneTag() { return $('office').value === 'AE' ? 'Dubai' : 'India'; }
+
+  function reset() { state = { mode: null, inAt: null, outAt: null, confirm: false }; render(); }
+  function logIn(mode) { state.mode = mode; state.inAt = now(); render(); }
+  function tryOut() { if (now() < HALF_BEFORE) { state.confirm = true; } else { doOut(); return; } render(); }
+  function doOut() { state.outAt = now(); state.confirm = false; render(); }
+
+  function render() {
+    $('clockbig').textContent = fmt(now());
+    $('zonehint').textContent = 'The time is always stamped by the server in the person’s own office time (' +
+      zoneName() + '), so a wrong laptop clock or time zone can’t change it.';
+    var html = '<div class="head"><div><h3>Today’s Attendance</h3><div class="clock">' +
+      zoneName() + ' · ' + fmt(now()) + '</div></div>';
+    if (state.inAt !== null) {
+      html += '<span class="pill ' + (state.mode === 'wfh' ? 'wfh' : 'office') + '">' +
+        (state.mode === 'wfh' ? 'Working from home' : 'In office') + '</span>';
+    }
+    html += '</div>';
+
+    var step = 0, status = null;
+    if (state.inAt === null) {
+      html += '<div class="btns"><button class="b-navy" onclick="logIn(\'office\')">→ Log In</button>' +
+              '<button class="b-out" onclick="logIn(\'wfh\')">⌂ Work From Home</button></div>';
+    } else if (state.outAt === null) {
+      step = 1;
+      html += '<div class="done">Logged in at <b>' + fmt(state.inAt) + '</b></div>';
+      if (!state.confirm) {
+        html += '<div class="btns"><button class="b-amber" onclick="tryOut()">⇥ Log Out</button></div>';
+      } else {
+        html += '<div class="confirm"><p>Logging out before 3:00 PM will mark today as a Half Day. Log out anyway?</p>' +
+                '<div class="row"><button class="b-amber" onclick="doOut()">Yes, log out</button>' +
+                '<button class="b-out" onclick="state.confirm=false;render()">Stay logged in</button></div></div>';
+      }
+    } else {
+      step = 2;
+      status = state.outAt < HALF_BEFORE ? 'half' : 'present';
+      html += '<div class="done">Logged in <b>' + fmt(state.inAt) + '</b> · Logged out <b>' + fmt(state.outAt) +
+              '</b> · <span class="' + (status === 'half' ? 'tag-half' : 'tag-present') + '">' +
+              (status === 'half' ? 'Half Day' : 'Present') + '</span></div>';
+    }
+    if (state.inAt !== null) html += '<button class="reset" onclick="reset()">Start over</button>';
+    $('card').innerHTML = html;
+
+    Array.prototype.forEach.call(document.querySelectorAll('.step'), function (el) {
+      el.classList.toggle('on', Number(el.getAttribute('data-s')) === step);
+    });
+
+    var row;
+    if (state.inAt === null) {
+      row = '<td>You <span class="zone">' + zoneTag() + '</span></td><td>—</td><td>—</td><td><span class="st s-abs">Absent</span> <span style="color:#6B7280;font-size:12px">Did not log in</span></td>';
+    } else {
+      var cls = status === 'half' ? 's-half' : (state.mode === 'wfh' ? 's-wfh' : 's-present');
+      var lbl = status === 'half' ? 'Half Day' : (state.mode === 'wfh' ? 'Work From Home' : 'Present');
+      row = '<td>You <span class="zone">' + zoneTag() + '</span></td><td>' + fmt(state.inAt) + '</td><td>' +
+            (state.outAt === null ? '—' : fmt(state.outAt)) + '</td><td><span class="st ' + cls + '">' +
+            (state.outAt === null ? (state.mode === 'wfh' ? 'Work From Home' : 'Present') : lbl) + '</span>' +
+            (state.mode === 'wfh' && status === 'half' ? ' <span style="color:#6B7280;font-size:12px">Work from home</span>' : '') + '</td>';
+    }
+    $('hr').innerHTML = '<tr>' + row + '</tr>';
+  }
+
+  $('slider').addEventListener('input', render);
+  $('office').addEventListener('change', render);
+  render();
+</script>
+</body>
+</html>

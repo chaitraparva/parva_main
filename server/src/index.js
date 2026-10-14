@@ -29,6 +29,7 @@ import {
   onboardingCandidatesRouter,
 } from './routes/resources.js'
 import { attendanceClockRouter } from './routes/attendance-clock.js'
+import biometricRouter from './routes/biometric.js'
 
 const app = express()
 
@@ -57,6 +58,8 @@ app.use(rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, lega
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.use('/api/auth', authRouter)
+// Office biometric device -> website (secret-key protected, not a user login).
+app.use('/api/biometric', biometricRouter)
 app.use('/api/public', publicRouter)
 app.use('/api/admin', adminRouter)
 app.use('/api/employees', employeesRouter)

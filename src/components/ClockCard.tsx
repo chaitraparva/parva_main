@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { LogIn, LogOut, Home, Clock } from 'lucide-react'
 import type { AttendanceRecord, Employee } from '../types'
 import * as api from '../lib/api'
-import { HALF_DAY_BEFORE_HOUR, formatClock, nowInZone, timeZoneForLocation, zoneLabel } from '../lib/clock'
+import { HALF_DAY_BEFORE_HOUR, LOGIN_CLOSES_HOUR, formatClock, nowInZone, timeZoneForLocation, zoneLabel } from '../lib/clock'
 
 const navy = '#1C2B4A'
 
@@ -73,7 +73,13 @@ export default function ClockCard({ employeeId, employees, attendance, onRefresh
       )}
 
       <div className="mt-4">
-        {!loggedIn && (
+        {!loggedIn && now.hour >= LOGIN_CLOSES_HOUR && (
+          <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            Login closed at {LOGIN_CLOSES_HOUR - 12}:00 PM today, so today is marked Absent. If you did work today, please ask HR to mark your attendance.
+          </div>
+        )}
+
+        {!loggedIn && now.hour < LOGIN_CLOSES_HOUR && (
           <div className="flex flex-wrap gap-3">
             <button onClick={() => run(() => api.clockIn('office'))} disabled={busy}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"

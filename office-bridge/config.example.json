@@ -1,0 +1,8 @@
+{
+  "sqlServer": "DESKTOP-SD7NQFT\\SQLEXPRESS",
+  "database": "eTimetracklite1",
+  "sqlUser": "sa",
+  "sqlPassword": "PUT-THE-eTimeTrack-DATABASE-PASSWORD-HERE",
+  "apiUrl": "https://hr.parvarealty.ae/api/biometric/punches",
+  "syncKey": "PUT-THE-SYNC-KEY-HERE"
+}

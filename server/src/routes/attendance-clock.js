@@ -15,6 +15,9 @@ import { toCamel } from '../lib/case.js'
 // Logging out before HALF_DAY_BEFORE_HOUR:00 local time turns the day into a
 // Half Day; logging out at or after it keeps it Present.
 const HALF_DAY_BEFORE_HOUR = 15
+// Login (and Work From Home) closes at 2:00 PM local time -- after that nobody
+// can log in for the day; HR can still mark attendance by hand.
+export const LOGIN_CLOSES_HOUR = 14
 
 export function timeZoneForLocation(location) {
   return /dubai|uae|abu dhabi|sharjah/i.test(location || '') ? 'Asia/Dubai' : 'Asia/Kolkata'
@@ -46,13 +49,17 @@ attendanceClockRouter.post('/check-in', requireAuth, asyncHandler(async (req, re
   const employeeId = req.auth.employeeId
   const tz = await loadEmployeeTimeZone(employeeId)
   if (!tz) return res.status(404).json({ error: 'Account not found.' })
-  const { date, time } = localNow(tz)
+  const { date, time, hour } = localNow(tz)
 
   const existing = (await pool.query(
     'SELECT * FROM attendance_records WHERE employee_id = $1 AND date = $2', [employeeId, date],
   )).rows[0]
   if (existing && existing.check_in && existing.status !== 'absent') {
     return res.status(409).json({ error: `You already logged in today at ${existing.check_in}.` })
+  }
+
+  if (hour >= LOGIN_CLOSES_HOUR) {
+    return res.status(403).json({ error: `Login closed at ${LOGIN_CLOSES_HOUR - 12}:00 PM today. Please ask HR to mark your attendance.` })
   }
 
   const { rows } = await pool.query(

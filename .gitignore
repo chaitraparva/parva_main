@@ -11,3 +11,7 @@ logs/
 *.log
 .claude-replay.*
 .tmp-*
+
+# Office biometric bridge: real settings (SQL password + sync key) stay on the office PC only
+office-bridge/config.json
+office-bridge/sync.log
