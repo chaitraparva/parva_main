@@ -1081,6 +1081,10 @@ export default function App() {
       date: toDateOnly(r.date),
     }
   })
+    // Newest date first everywhere. The server returns rows in the order they
+    // were saved, and biometric catch-up syncs save older days late, which
+    // made attendance history lists appear jumbled.
+    .sort((a, b) => b.date.localeCompare(a.date))
 
   // Same idea — timesheet_entries doesn't need an employeeName join at all;
   // both MyTimesheet and TeamTimesheet already resolve the display name
