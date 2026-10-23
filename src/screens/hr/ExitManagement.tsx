@@ -19,7 +19,7 @@ const NEW_EXIT_DEFAULT = {
   exitType: 'Resignation' as ExitType,
   resignationDate: '',
   lastWorkingDay: '',
-  noticePeriodDays: 30,
+  noticePeriodDays: 0,
   reason: '',
 }
 
@@ -141,7 +141,7 @@ export default function ExitManagement({ exits, onExitsUpdate, employees }: Exit
               <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: sc.bg, color: sc.text }}>{r.status}</span>
               <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{r.exitType}</span>
             </div>
-            <p className="text-xs text-muted-foreground">{r.department} · LWD: {r.lastWorkingDay} · Notice: {r.noticePeriodDays} days</p>
+            <p className="text-xs text-muted-foreground">{r.department} · LWD: {r.lastWorkingDay}</p>
           </div>
           <div className="flex items-center gap-4 mr-2">
             <div className="text-right">
@@ -226,7 +226,6 @@ export default function ExitManagement({ exits, onExitsUpdate, employees }: Exit
                     {[
                       ['Resignation Date', r.resignationDate],
                       ['Last Working Day', r.lastWorkingDay],
-                      ['Notice Period', `${r.noticePeriodDays} days`],
                       ['Exit Type', r.exitType],
                       ...(r.reason ? [['Reason', r.reason]] : []),
                       ...(r.rehireEligible !== undefined ? [['Rehire Eligible', r.rehireEligible ? 'Yes' : 'No']] : []),
@@ -335,11 +334,6 @@ export default function ExitManagement({ exits, onExitsUpdate, employees }: Exit
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Last Working Day *</label>
               <input type="date" value={form.lastWorkingDay} onChange={e => setForm(p => ({ ...p, lastWorkingDay: e.target.value }))}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Notice Period (days)</label>
-              <input type="number" value={form.noticePeriodDays} onChange={e => setForm(p => ({ ...p, noticePeriodDays: +e.target.value }))}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
             </div>
             <div className="sm:col-span-3">

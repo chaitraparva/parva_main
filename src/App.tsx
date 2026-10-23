@@ -559,6 +559,13 @@ export default function App() {
 
     setRawExits(next.map(r => ({ id: r.id, ...exitFieldsOf(r) } as api.RawExitRecord)))
 
+    const justCompleted = new Set(
+      [...created, ...updated].filter(r => r.status === 'Completed').map(r => r.employeeId),
+    )
+    if (justCompleted.size > 0) {
+      setEmployees(prev => prev.map(e => justCompleted.has(e.id) ? { ...e, status: 'inactive' as const } : e))
+    }
+
     try {
       for (const r of created) {
         await api.createExitRecord(exitFieldsOf(r))
@@ -1122,6 +1129,12 @@ export default function App() {
     }
   })
 
+  // Employees whose exit is Completed are marked 'inactive' (by the
+  // database trigger in server/sql/13_exit_completed_deactivate.sql) and
+  // are hidden from directory/team/attendance lists. The full `employees`
+  // list is still used where past records need the person's name.
+  const activeEmployees = employees.filter(e => e.status !== 'inactive')
+
   // Same idea — exit_records doesn't store the employee's name/department/
   // role, so those are joined in from the employee directory here.
   const exits: ExitRecord[] = rawExits.map(r => {
@@ -1242,7 +1255,7 @@ export default function App() {
           <ManagerPortal
             {...sharedLeaveProps} {...sharedExpenseProps}
             employeeId={employeeId}
-            employees={employees}
+            employees={activeEmployees}
             attendance={attendance}
             onAttendanceRefresh={refreshAttendance}
             payroll={payroll} onPayrollUpdate={onPayrollUpdate}
@@ -1252,7 +1265,7 @@ export default function App() {
         return (
           <MgmtPortal
             {...sharedLeaveProps}
-            employees={employees}
+            employees={activeEmployees}
             payroll={payroll}
             tickets={tickets}
             exits={exits}
@@ -1278,7 +1291,7 @@ export default function App() {
         return (
           <HRDashboard
             navigate={navigate}
-            employees={employees} leaves={leaves} payroll={payroll} attendance={attendance}
+            employees={activeEmployees} leaves={leaves} payroll={payroll} attendance={attendance}
             tickets={tickets} expenses={expenses} exits={exits} onboarding={onboarding}
             currentEmployee={currentEmployee} onAttendanceRefresh={refreshAttendance}
           />
@@ -1288,15 +1301,15 @@ export default function App() {
       case 'performance':
         return <Performance goals={goals} reviews={reviews} />
       case 'directory':
-        return <Directory employees={employees} currentEmployeeId={employeeId} onEmployeesUpdate={onEmployeesUpdate} />
+        return <Directory employees={activeEmployees} currentEmployeeId={employeeId} onEmployeesUpdate={onEmployeesUpdate} />
       case 'org-chart':
-        return <OrgChart employees={employees} />
+        return <OrgChart employees={activeEmployees} />
       case 'attendance-hr':
-        return <AttendanceHR employees={employees} attendance={attendance} leaves={leaves} currentEmployeeId={employeeId} onAttendanceUpdate={onAttendanceUpdate} onAttendanceRefresh={refreshAttendance} />
+        return <AttendanceHR employees={activeEmployees} attendance={attendance} leaves={leaves} currentEmployeeId={employeeId} onAttendanceUpdate={onAttendanceUpdate} onAttendanceRefresh={refreshAttendance} />
       case 'my-timesheet':
         return <MyTimesheet employeeId={employeeId} employees={employees} timesheet={timesheet} onSaveEntry={onSaveTimesheetEntry} onDeleteEntry={onDeleteTimesheetEntry} />
       case 'team-timesheet':
-        return <TeamTimesheet employees={employees} timesheet={timesheet} />
+        return <TeamTimesheet employees={activeEmployees} timesheet={timesheet} />
       case 'leave':
         return <Leave role={role} employees={employees} {...sharedLeaveProps} />
       case 'payroll-hr':
@@ -1316,7 +1329,7 @@ export default function App() {
       case 'profile':
         return <Profile employeeId={employeeId} employees={employees} onEmployeesUpdate={onEmployeesUpdate} payroll={payroll} attendance={attendance} leaves={leaves} />
       default:
-        return <HRDashboard navigate={navigate} employees={employees} leaves={leaves} payroll={payroll} attendance={attendance} tickets={tickets} expenses={expenses} exits={exits} onboarding={onboarding} currentEmployee={currentEmployee} onAttendanceRefresh={refreshAttendance} />
+        return <HRDashboard navigate={navigate} employees={activeEmployees} leaves={leaves} payroll={payroll} attendance={attendance} tickets={tickets} expenses={expenses} exits={exits} onboarding={onboarding} currentEmployee={currentEmployee} onAttendanceRefresh={refreshAttendance} />
     }
   }
 
