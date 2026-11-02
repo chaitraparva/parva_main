@@ -48,7 +48,13 @@ router.post('/', asyncHandler(async (req, res) => {
     return res.status(503).json({ error: 'Document storage is not configured yet.' })
   }
 
-  const storagePath = `employees/${employeeId}/${crypto.randomUUID()}-${filename}`
+  // Supabase Storage rejects some characters in object keys (spaces, brackets,
+  // accents, emoji — all common in phone/scanner filenames like
+  // "DocScanner 2 Nov 2026 4-16pm(1).jpg"). Keep a safe version for the storage
+  // key only; the original name is still saved in the database and used for
+  // downloads.
+  const safeName = String(filename).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(-120) || 'file'
+  const storagePath = `employees/${employeeId}/${crypto.randomUUID()}-${safeName}`
   const upload = () => client.storage.from(BUCKET).upload(storagePath, buffer, {
     contentType: contentType || 'application/octet-stream',
     upsert: false,
