@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import type { AttendanceRecord, Employee, LeaveRequest } from '../../types'
 import { Calendar, Plus, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import ClockCard from '../../components/ClockCard'
-import LeaveLopTable from '../../components/LeaveLopTable'
 import { ATTENDANCE_EXCLUDED_IDS, buildDayRows, isAbsentGroup, isAttended } from '../../lib/attendanceStatus'
 import type { DayRow } from '../../lib/attendanceStatus'
 import { formatClock, nowInZone, timeZoneForLocation, zoneLabel } from '../../lib/clock'
@@ -307,10 +306,6 @@ export default function AttendanceHR({ employees, attendance, leaves, currentEmp
           </table>
         </div>
       </div>
-
-      {/* Leave & LOP — every absent working day is covered by an approved
-          leave or counted as LOP (Loss of Pay). */}
-      <LeaveLopTable employees={employees} attendance={records} leaves={leaves} todayIso={todayIso} />
 
       {/* Heatmap — the current month, computed live from real attendance
           records (allTrackedRecords) rather than a fixed/seeded pattern. A
