@@ -36,6 +36,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   management: [
     { id: 'mgmt-portal', label: 'Executive Overview', icon: <LayoutDashboard size={18} />, section: 'Overview' },
     { id: 'leave', label: 'HR Leave Requests', icon: <ClipboardCheck size={18} />, section: 'Approvals' },
+    { id: 'expense-approvals', label: 'HR Expense Approvals', icon: <Receipt size={18} />, section: 'Approvals' },
     { id: 'directory', label: 'Employee Directory', icon: <FolderOpen size={18} />, section: 'People' },
     { id: 'org-chart', label: 'Organisation Chart', icon: <Network size={18} />, section: 'People' },
     { id: 'attendance-hr', label: 'Attendance', icon: <Calendar size={18} />, section: 'People' },

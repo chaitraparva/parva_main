@@ -18,6 +18,7 @@ import Leave from './screens/hr/Leave'
 import OnboardingHR from './screens/hr/OnboardingHR'
 import ExitManagement from './screens/hr/ExitManagement'
 import ExpenseHR from './screens/hr/ExpenseHR'
+import ExpenseApprovals from './screens/management/ExpenseApprovals'
 import TicketsHR from './screens/hr/TicketsHR'
 import Recruitment from './screens/hr/Recruitment'
 import Performance from './screens/hr/Performance'
@@ -1318,6 +1319,8 @@ export default function App() {
         return <Leave role={role} employees={employees} {...sharedLeaveProps} />
       case 'payroll-hr':
         return <PayrollHR role={role} payroll={payroll} onPayrollUpdate={onPayrollUpdate} employees={employees} attendance={attendance} leaves={leaves} />
+      case 'expense-approvals':
+        return <ExpenseApprovals {...sharedExpenseProps} employees={employees} currentEmployee={currentEmployee} />
       case 'expense-hr':
         return <ExpenseHR {...sharedExpenseProps} onExpensesRefetch={refetchExpenses} employees={employees} currentEmployee={currentEmployee} />
       case 'onboarding-hr':

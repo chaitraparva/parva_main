@@ -1,3 +1,4 @@
+import { pool } from '../db.js'
 import { crudRouter } from '../lib/crud.js'
 
 // Every operational module besides auth/employees, built on the generic
@@ -74,7 +75,31 @@ export const expenseClaimsRouter = crudRouter({
   // ManagerPortal.tsx is read-only) and neither does management/CEO.
   // Without this restriction, any signed-in employee could approve their own
   // claim by calling the API directly, regardless of what the UI shows them.
-  updateRoles: ['hr', 'finance'],
+  // The Director (management login) can also change a claim — but ONLY one
+  // filed by an HR person (see canUpdateRow below).
+  updateRoles: ['hr', 'finance', 'management'],
+  // HR staff approve everyone's claims, so an HR person's OWN claim can't be
+  // approved by HR (that would be approving their own money, or a colleague's).
+  // Those go to the Director instead:
+  //   • claim filed by an HR person → only 'management' may approve/reject it
+  //     (finance may still mark an already-Approved one Reimbursed; HR may not
+  //     touch it at all)
+  //   • any other claim → exactly as before (hr/finance only; management can't)
+  canUpdateRow: async (req, claim) => {
+    const { rows } = await pool.query(
+      `SELECT (job_title = 'hr' OR 'hr' = ANY(COALESCE(login_roles, '{}'))) AS is_hr FROM employees WHERE id = $1`,
+      [claim.employee_id],
+    )
+    const claimantIsHr = !!rows[0]?.is_hr
+    const role = req.auth.loginRole
+    if (claimantIsHr) {
+      if (role === 'management') return null
+      if (role === 'finance' && claim.status === 'Approved') return null
+      return "An HR team member's expense claim has to be approved by the Director."
+    }
+    if (role === 'management') return 'Only HR can approve this expense claim.'
+    return null
+  },
   // Anyone can delete their OWN claim, but only while it's still 'Pending' —
   // once HR has approved/rejected it or finance has reimbursed it, deleting
   // it would silently break their records, so selfDeleteStatuses blocks that.

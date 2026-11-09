@@ -31,7 +31,10 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
   // CRM Leave Log for visibility into those instead).
   const pendingLeave = leaves.filter(l => l.pendingWith === 'hr').length
   const pendingPayroll = payroll.filter(p => p.status === 'pending-hr').length
-  const pendingExpenses = expenses.filter(e => e.status === 'Pending').length
+  // HR staff's own claims are approved by the Director, not HR — so they
+  // aren't part of HR's "pending" count.
+  const hrStaffIds = new Set(employees.filter(e => e.role === 'hr').map(e => e.id))
+  const pendingExpenses = expenses.filter(e => e.status === 'Pending' && !hrStaffIds.has(e.employeeId)).length
   const openTickets = tickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed').length
   const urgentTickets = tickets.filter(t => t.priority === 'Urgent' && t.status !== 'Resolved' && t.status !== 'Closed')
   const activeOnboarding = onboarding.filter(c => c.onboardingProgress < 100).length

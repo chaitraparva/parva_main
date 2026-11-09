@@ -42,6 +42,12 @@ import { asyncHandler } from './async-handler.js'
  * corrupt their records). Pass deleteRoles separately for roles allowed to
  * delete ANY row regardless of ownership/status.
  *
+ * canUpdateRow: optional async (req, existingRow) => null | 'error message'. Runs on
+ * PATCH after the role check, with the row as it is in the database right now,
+ * for rules that depend on WHICH row is being changed (e.g. an HR person's own
+ * expense claim may only be approved by the Director). Return a message to
+ * refuse with 403, or null to allow.
+ *
  * listLimit: max rows returned by the unfiltered GET / (default 500, newest first).
  * Tables that grow by many rows per day (attendance_records: one row per
  * employee per day) must raise this or older months silently drop out.
@@ -59,7 +65,7 @@ import { asyncHandler } from './async-handler.js'
  * this — node-postgres already JSON.stringify()s those correctly — but
  * listing an object column here too is harmless and more explicit.
  */
-export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles, updateRoles, deleteRoles, selfDelete, selfDeleteStatuses, jsonColumns, listLimit = 500 }) {
+export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles, updateRoles, deleteRoles, selfDelete, selfDeleteStatuses, jsonColumns, listLimit = 500, canUpdateRow }) {
   // Read stays open to any signed-in user; only writes are role-gated
   // (see writeGuard/updateGuard below).
   const router = Router()
@@ -102,6 +108,12 @@ export function crudRouter({ table, idColumn = 'id', allowedColumns, writeRoles,
   router.patch('/:id', ...updateGuard, asyncHandler(async (req, res) => {
     const body = pick(req.body, allowedColumns)
     if (Object.keys(body).length === 0) return res.status(400).json({ error: 'No valid fields supplied.' })
+    if (canUpdateRow) {
+      const { rows: current } = await pool.query(`SELECT * FROM ${table} WHERE ${idColumn} = $1`, [req.params.id])
+      if (!current[0]) return res.status(404).json({ error: 'Not found.' })
+      const refusal = await canUpdateRow(req, current[0], body)
+      if (refusal) return res.status(403).json({ error: refusal })
+    }
     stringifyJsonColumns(body, jsonColumns)
     const snake = toSnake(body)
     const columns = Object.keys(snake)

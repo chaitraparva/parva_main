@@ -12,6 +12,7 @@ const screenTitles: Record<string, string> = {
   'onboarding-hr': 'Onboarding',
   'exit-management': 'Exit Management',
   'expense-hr': 'Expense Claims',
+  'expense-approvals': 'HR Expense Approvals',
   'tickets-hr': 'Employee Tickets',
   'notifications': 'Notifications',
   'settings': 'Settings',

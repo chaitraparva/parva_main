@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import type { ExpenseClaim, Employee } from '../../types'
-import { Check, X, Filter, DollarSign, Upload, RefreshCw, ChevronDown, FileSpreadsheet, Archive, Download, Eye } from 'lucide-react'
+import { Check, X, Filter, DollarSign, Upload, RefreshCw, ChevronDown, FileSpreadsheet, Archive, Download, Eye, Plus, Trash2 } from 'lucide-react'
+import NewExpenseForm from '../../components/NewExpenseForm'
 import { downloadExcel, buildExcelBlob } from '../../lib/excel'
 import { downloadDataUrl, downloadZip, placeholderReceiptDataUrl } from '../../lib/files'
 import * as api from '../../lib/api'
@@ -60,6 +61,14 @@ interface Props {
 
 export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetch, employees, currentEmployee }: Props) {
   const approverId = currentEmployee?.id
+  // HR staff approve everyone's claims — but not each other's (or their own).
+  // A claim filed by an HR person goes to the Director instead, who approves
+  // it from the "HR Expense Approvals" screen. The server enforces this too.
+  const hrIds = new Set(employees.filter(e => e.role === 'hr').map(e => e.id))
+  const isHrClaim = (c: ExpenseClaim) => hrIds.has(c.employeeId)
+  const [showNewClaim, setShowNewClaim] = useState(false)
+  const [claimFlash, setClaimFlash] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterCategory, setFilterCategory] = useState<string>('all')
   const [noteMap, setNoteMap] = useState<Record<string, string>>({})
@@ -167,6 +176,22 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetc
     setShowNoteFor(null)
   }
 
+  // Delete one of your OWN claims — only while it is still Pending (the
+  // server refuses once the Director has acted on it).
+  const deleteOwnClaim = async (c: ExpenseClaim) => {
+    if (!window.confirm('Delete this expense claim? This cannot be undone.')) return
+    setUploadError(null)
+    setDeletingId(c.id)
+    try {
+      await api.deleteExpenseClaim(c.id)
+      await onExpensesRefetch()
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Could not delete this claim. Please try again.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const totals = {
     pending: expenses.filter(c => c.status === 'Pending').reduce((s, c) => s + c.amount, 0),
     approved: expenses.filter(c => c.status === 'Approved').reduce((s, c) => s + c.amount, 0),
@@ -253,11 +278,39 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetc
           <h2 className="font-serif text-2xl font-semibold text-foreground">Expense Claims</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Review each employee's expense sheet and view receipts — approved claims are sent to the Director for reimbursement</p>
         </div>
-        <button onClick={exportAll} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-border bg-card hover:bg-muted transition-all">
-          <FileSpreadsheet size={14} />
-          Export All to Excel
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {currentEmployee && (
+            <button onClick={() => setShowNewClaim(v => !v)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
+              style={{ backgroundColor: navy, color: '#FAF8F5' }}>
+              <Plus size={14} /> {showNewClaim ? 'Close' : 'New Expense Claim'}
+            </button>
+          )}
+          <button onClick={exportAll} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-border bg-card hover:bg-muted transition-all">
+            <FileSpreadsheet size={14} />
+            Export All to Excel
+          </button>
+        </div>
       </div>
+
+      {claimFlash && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-lg px-4 py-2.5">{claimFlash}</div>
+      )}
+
+      {showNewClaim && currentEmployee && (
+        <NewExpenseForm
+          employeeId={currentEmployee.id}
+          approverNote="Your claim goes to the Director for approval, then to Finance for reimbursement."
+          onSubmitted={async () => {
+            await onExpensesRefetch()
+            setClaimFlash('Claim submitted — it is now with the Director for approval.')
+            setTimeout(() => setClaimFlash(''), 5000)
+          }}
+          onCancel={() => {
+            setShowNewClaim(false)
+          }}
+        />
+      )}
 
       {uploadError && (
         <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2.5">
@@ -454,7 +507,18 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetc
                                 {c.reimbursedOn && <p className="text-[10px] text-muted-foreground">{c.reimbursedOn}</p>}
                               </td>
                               <td className="px-5 py-4">
-                                {c.status === 'Pending' && (
+                                {c.status === 'Pending' && isHrClaim(c) && (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-xs font-medium text-muted-foreground">Waiting for the Director</span>
+                                    {c.employeeId === approverId && (
+                                      <button onClick={() => deleteOwnClaim(c)} disabled={deletingId === c.id}
+                                        className="flex items-center gap-1 text-[11px] font-medium text-red-600 hover:underline disabled:opacity-60 w-fit">
+                                        <Trash2 size={11} /> {deletingId === c.id ? 'Deleting…' : 'Delete'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                {c.status === 'Pending' && !isHrClaim(c) && (
                                   <div className="flex flex-col gap-1.5">
                                     <div className="flex items-center gap-1.5">
                                       <button onClick={() => approve(c)}
@@ -480,7 +544,7 @@ export default function ExpenseHR({ expenses, onExpensesUpdate, onExpensesRefetc
                                 )}
                                 {c.status === 'Approved' && (
                                   <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                                    <DollarSign size={11} /> Sent to Director
+                                    <DollarSign size={11} /> {isHrClaim(c) ? 'Approved by Director' : 'Sent to Director'}
                                   </span>
                                 )}
                                 {(c.status === 'Reimbursed' || c.status === 'Rejected') && (
