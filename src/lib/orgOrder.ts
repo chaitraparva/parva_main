@@ -43,10 +43,14 @@ export const ROSTER_SHEET_ORDER: string[] = [
     'PA230028', // Deekshitha M.V
     'PA230018', // Nagesh N
     'PA230041', // Vijaya Vaishnavi A
-    'PA230047', // Ajoy Rameshan
-    'PA230048', // Ankita Nair
+    'PAU230051', // Ajoy Rameshan
+    'PAU230052', // Ankita Nair
     'DF230020', // Prajwal J
-    'PH230001', // Anjana
+    'PAU230053', // Anjana
+    'PAU230054', // Nur Uddin
+    'PAU230055', // Sumitra Kandel
+    'PAU230056', // Shahab Ud Din
+    'PAU230057', // Mitterpreet Singh
     'PH230002', // Sushma
 ]
 
