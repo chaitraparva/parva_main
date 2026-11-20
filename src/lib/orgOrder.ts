@@ -66,3 +66,54 @@ export function sortByRosterOrder<T extends Pick<Employee, 'id' | 'name'>>(list:
         return a.name.localeCompare(b.name)
     })
 }
+
+
+// Left-to-right order of people on the Organisation Chart, taken from the
+// hand-drawn chart. Only the order among people who share a manager matters,
+// so this is one flat list. Entries are employee IDs — except Selva, whose ID
+// is assigned when he is added, so he is matched by email. Anyone not listed
+// (e.g. the Dehradun team) follows after the listed people, A-Z.
+export const ORG_CHART_ORDER: string[] = [
+    // under Neelesh
+    'DF230003', // Ravishankar
+    'DF230002', // Akshitha Rautri
+    'PA230046', // Chaitra
+    'PAU230057', // Mitterpreet Singh
+    'DF230029', // Yatheesh SP
+    // under Akshitha
+    'PAU230053', // Anjana
+    'DF230008', // Renuka Rani
+    'DF230044', // Satish Kumar D
+    'selva@diagofinance.com', // Selva
+    'DF230006', // Thejavathi J N
+    // under Anjana
+    'PAU230051', // Ajoy Rameshan
+    'PAU230052', // Ankita Nair
+    'PAU230054', // Nur Uddin
+    'PAU230056', // Shahab Ud Din
+    'PAU230055', // Sumitra Kandel
+    // under Selva
+    'DF230011', // Arun Kumar A  (Adithi A, Suhas under him)
+    'DF230012', // Adithi A
+    'DF230010', // Suhas S Vasishta
+    'DF230040', // Manoj H
+    'DF230034', // Subhash H N
+    'DF230037', // Vishwas V  (Nazish Khan under him)
+    'DF230017', // Nazish Khan
+    // under Chaitra
+    'PA230018', // Nagesh N
+    'PA230028', // Deekshitha M.V
+    'PA230041', // Vijaya Vaishnavi A
+    // under Satish
+    'DF230019', // Ranjitha H S
+]
+
+const ORG_CHART_INDEX = new Map(ORG_CHART_ORDER.map((k, i) => [k.toLowerCase(), i]))
+
+/** Position on the org chart; people not listed sort after everyone listed. */
+export function orgChartRank(e: Pick<Employee, 'id' | 'email'>): number {
+    const byId = ORG_CHART_INDEX.get(e.id.toLowerCase())
+    if (byId !== undefined) return byId
+    const byEmail = e.email ? ORG_CHART_INDEX.get(e.email.toLowerCase()) : undefined
+    return byEmail !== undefined ? byEmail : Infinity
+}

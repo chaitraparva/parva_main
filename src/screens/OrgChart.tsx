@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useLayoutEffect, useEffect } from 'react'
 import type { Employee, JobTitle } from '../types'
+import { orgChartRank } from '../lib/orgOrder'
 import { X, Mail, Phone, MapPin, Calendar, IdCard, UserCog, Briefcase, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
 
 const navy = '#1C2B4A'
@@ -28,6 +29,11 @@ interface Props {
 // managerId in mockData.ts; the chart updates itself.
 type ChartNode = { kind: 'employee'; id: string; children: ChartNode[] }
 
+// Sibling order follows the approved chart (see ORG_CHART_ORDER in
+// lib/orgOrder.ts); anyone not listed there follows, A-Z.
+const byChartOrder = (a: Employee, b: Employee) =>
+  orgChartRank(a) - orgChartRank(b) || a.name.localeCompare(b.name)
+
 function buildOrgTree(employees: Employee[]): ChartNode[] {
   const roots = employees.filter(e => !e.managerId)
   const buildNode = (emp: Employee): ChartNode => ({
@@ -35,13 +41,13 @@ function buildOrgTree(employees: Employee[]): ChartNode[] {
     id: emp.id,
     children: employees
       .filter(e => e.managerId === emp.id)
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .sort(byChartOrder)
       .map(buildNode),
   })
   // Multiple people with no manager (shouldn't normally happen — flags a
   // data gap) all render as separate top-level trees rather than being
   // silently dropped.
-  return roots.map(buildNode)
+  return roots.sort(byChartOrder).map(buildNode)
 }
 
 function NodeCard({ employee, onSelect }: { employee: Employee; onSelect: (e: Employee) => void }) {
