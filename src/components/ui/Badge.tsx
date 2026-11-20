@@ -13,8 +13,10 @@ export function PayrollStatusBadge({ status }: { status: string }) {
     'pending-hr': 'bg-blue-50 text-blue-700',
     'pending-admin': 'bg-violet-50 text-violet-700',
     disbursed: 'bg-emerald-50 text-emerald-700',
+    rejected: 'bg-red-50 text-red-700',
   }
   const labels: Record<string, string> = {
+    rejected: 'Rejected by Manager',
     'pending-manager': 'Awaiting Manager',
     'pending-hr': 'Awaiting HR',
     'pending-admin': 'Awaiting Admin',

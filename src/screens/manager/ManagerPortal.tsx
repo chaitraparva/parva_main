@@ -193,6 +193,24 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
     setPayroll(prev => prev.map(r => r.id === id ? { ...r, status: 'pending-hr' as const, managerApproved: true } : r))
   }
 
+  // Reject with a remark: the record leaves the manager's queue and goes back
+  // to HR (who can see why, fix it and send it back for approval).
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [rejectRemark, setRejectRemark] = useState('')
+  const [rejectError, setRejectError] = useState('')
+
+  function startReject(id: string) {
+    setRejectingId(id); setRejectRemark(''); setRejectError('')
+  }
+
+  function confirmReject() {
+    const remark = rejectRemark.trim()
+    if (!remark) { setRejectError('Please write a remark so HR knows what to fix.'); return }
+    const id = rejectingId
+    setPayroll(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' as const, managerApproved: false, rejectionRemark: remark } : r))
+    setRejectingId(null); setRejectRemark(''); setRejectError('')
+  }
+
   function approveAllPayroll() {
     setPayroll(prev => prev.map(r => r.status === 'pending-manager' ? { ...r, status: 'pending-hr' as const, managerApproved: true } : r))
   }
@@ -608,9 +626,14 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
                         <td className="py-2.5 text-red-600">-₹{r.deductions.toLocaleString('en-IN')}</td>
                         <td className="py-2.5 font-bold" style={{ color: navy }}>₹{r.netPay.toLocaleString('en-IN')}</td>
                         <td className="py-2.5">
-                          <button onClick={() => approvePayroll(r.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: navy }}>
-                            Approve
-                          </button>
+                          <div className="flex gap-2">
+                            <button onClick={() => approvePayroll(r.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: navy }}>
+                              Approve
+                            </button>
+                            <button onClick={() => startReject(r.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-red-200 text-red-600 bg-red-50 hover:bg-red-100">
+                              Reject
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -619,6 +642,33 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
               </div>
             )}
           </div>
+
+          {rejectingId && (() => {
+            const rec = payroll.find(r => r.id === rejectingId)
+            return (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setRejectingId(null)}>
+                <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5" onClick={e => e.stopPropagation()}>
+                  <h4 className="font-serif text-base font-semibold mb-1" style={{ color: navy }}>Reject payroll</h4>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    {rec ? `${rec.employeeName} · ${rec.month}` : ''} — HR will see your remark and can correct it.
+                  </p>
+                  <textarea
+                    value={rejectRemark}
+                    onChange={e => { setRejectRemark(e.target.value); setRejectError('') }}
+                    rows={4}
+                    autoFocus
+                    placeholder="Remark (required) — e.g. incentive amount is wrong"
+                    className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  />
+                  {rejectError && <p className="text-xs font-medium mt-1" style={{ color: '#DC2626' }}>{rejectError}</p>}
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => setRejectingId(null)} className="flex-1 py-2 rounded-lg text-sm font-medium border border-border">Cancel</button>
+                    <button onClick={confirmReject} className="flex-1 py-2 rounded-lg text-sm font-bold text-white" style={{ background: '#DC2626' }}>Reject</button>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {payroll.filter(r => r.status !== 'pending-manager').length > 0 && (
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
@@ -630,6 +680,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
                       <th className="pb-2 font-medium">Employee</th>
                       <th className="pb-2 font-medium">Net Pay</th>
                       <th className="pb-2 font-medium">Status</th>
+                      <th className="pb-2 font-medium">Remark</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -638,6 +689,7 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
                         <td className="py-2.5">{r.employeeName}</td>
                         <td className="py-2.5 font-medium">₹{r.netPay.toLocaleString('en-IN')}</td>
                         <td className="py-2.5"><StatusBadge status={r.status} /></td>
+                        <td className="py-2.5 text-xs text-red-600">{r.status === 'rejected' ? r.rejectionRemark : ''}</td>
                       </tr>
                     ))}
                   </tbody>

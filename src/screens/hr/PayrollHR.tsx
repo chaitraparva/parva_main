@@ -9,13 +9,14 @@ import PayslipDocument from '../../components/PayslipDocument'
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
 
-type FilterTab = 'all' | 'pending-hr' | 'pending-management' | 'disbursed'
+type FilterTab = 'all' | 'rejected' | 'pending-hr' | 'pending-management' | 'disbursed'
 
 const statusLabel: Record<string, string> = {
   'pending-manager': 'Awaiting Manager',
   'pending-hr': 'Pending HR',
   'pending-management': 'Pending Admin',
   'disbursed': 'Disbursed',
+  'rejected': 'Rejected by Manager',
 }
 
 const statusColor: Record<string, { bg: string; text: string }> = {
@@ -23,6 +24,7 @@ const statusColor: Record<string, { bg: string; text: string }> = {
   'pending-hr': { bg: '#FFFBEB', text: '#D97706' },
   'pending-management': { bg: '#EFF6FF', text: '#2563EB' },
   'disbursed': { bg: '#ECFDF5', text: '#059669' },
+  'rejected': { bg: '#FEF2F2', text: '#DC2626' },
 }
 
 const PIPELINE = ['pending-manager', 'pending-hr', 'pending-management', 'disbursed']
@@ -127,6 +129,13 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
       setProcessing(prev => { const n = new Set(prev); n.delete(id); return n })
       setSelected(prev => prev?.id === id ? { ...prev, hrProcessed: true, status: 'pending-management' } : prev)
     }, 800)
+  }
+
+  // A record the Line Manager rejected: HR has looked at the remark / fixed it,
+  // now send it back to the manager for approval.
+  const resubmitToManager = (id: string) => {
+    setRecords(prev => prev.map(r => r.id === id ? { ...r, status: 'pending-manager' as const, managerApproved: false, rejectionRemark: '' } : r))
+    setSelected(prev => prev?.id === id ? null : prev)
   }
 
   const processAll = () => {
@@ -303,7 +312,7 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
         <div className="flex-1 min-w-0 bg-card rounded-xl border border-border shadow-sm overflow-hidden">
           {/* Filter tabs */}
           <div className="border-b border-border px-4 flex flex-wrap gap-0">
-            {(['all', 'pending-hr', 'pending-management', 'disbursed'] as FilterTab[]).map(t => (
+            {(['all', 'rejected', 'pending-hr', 'pending-management', 'disbursed'] as FilterTab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className="py-3.5 px-4 text-xs font-medium border-b-2 -mb-px transition-colors"
                 style={{ borderColor: tab === t ? gold : 'transparent', color: tab === t ? navy : '#7A7065' }}>
@@ -355,6 +364,9 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
                           style={{ backgroundColor: sc.bg, color: sc.text }}>
                           {statusLabel[rec.status]}
                         </span>
+                        {rec.status === 'rejected' && rec.rejectionRemark && (
+                          <p className="text-[11px] mt-1 max-w-[220px]" style={{ color: '#DC2626' }}>Remark: {rec.rejectionRemark}</p>
+                        )}
                       </td>
                       <td className="px-5 py-4" onClick={e => e.stopPropagation()}>
                         {rec.status === 'pending-hr' ? (
@@ -363,6 +375,11 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
                             style={{ backgroundColor: gold, color: navy }}>
                             <CreditCard size={12} />
                             {isProc ? 'Processing…' : 'Process'}
+                          </button>
+                        ) : rec.status === 'rejected' ? (
+                          <button onClick={() => resubmitToManager(rec.id)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap border border-border bg-card hover:bg-muted">
+                            Send back to Manager
                           </button>
                         ) : (
                           <button className="p-1 text-muted-foreground hover:text-foreground transition-colors"
@@ -397,6 +414,16 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
                 ) : (
                   <div className="bg-card rounded-xl border border-border shadow-sm p-5 text-sm text-muted-foreground">
                     Could not find this employee's record.
+                  </div>
+                )}
+                {selected.status === 'rejected' && (
+                  <div className="rounded-xl border px-4 py-3 text-sm" style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>
+                    <p className="font-semibold mb-0.5">Rejected by the Line Manager</p>
+                    <p>{selected.rejectionRemark || 'No remark was written.'}</p>
+                    <button onClick={() => resubmitToManager(selected.id)}
+                      className="mt-3 w-full py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: navy }}>
+                      Send back to Manager
+                    </button>
                   </div>
                 )}
                 {selected.status === 'pending-hr' && (

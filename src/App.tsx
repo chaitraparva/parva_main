@@ -76,7 +76,7 @@ function formatCommentAt(value: string | null | undefined): string {
 const PAYROLL_FIELDS = [
   'employeeId', 'month', 'baseSalary', 'incentives', 'deductions', 'netPay',
   'status', 'managerApproved', 'hrProcessed', 'adminApproved',
-  'periodStart', 'periodEnd', 'reimbursements', 'bonus', 'otherDeductions',
+  'periodStart', 'periodEnd', 'reimbursements', 'bonus', 'otherDeductions', 'rejectionRemark',
 ] as const
 
 function payrollFieldsOf(r: PayrollRecord): Omit<api.RawPayrollRecord, 'id'> {
@@ -1069,6 +1069,7 @@ export default function App() {
       reimbursements: r.reimbursements != null ? Number(r.reimbursements) : undefined,
       bonus: r.bonus != null ? Number(r.bonus) : undefined,
       otherDeductions: r.otherDeductions != null ? Number(r.otherDeductions) : undefined,
+      rejectionRemark: r.rejectionRemark || '',
     }
   })
 

@@ -254,7 +254,9 @@ export async function updateLeaveRequest(
 // from the employee directory. period_start/period_end come back as full
 // timestamps like every other DATE column; App.tsx trims those too.
 //
-// NOTE: periodStart/periodEnd/reimbursements/bonus/otherDeductions need
+// NOTE: rejectionRemark (and the 'rejected' status) need
+// server/sql/19_payroll_reject_with_remark.sql run once against the database.
+// periodStart/periodEnd/reimbursements/bonus/otherDeductions need
 // server/sql/03_payroll_payslip_fields_migration.sql run once against the
 // database — the original payroll_records table predates those fields.
 export type RawPayrollRecord = Omit<PayrollRecord, 'employeeName' | 'role'>

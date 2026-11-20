@@ -123,7 +123,7 @@ CREATE TABLE payroll_records (
   deductions       NUMERIC(12, 2) NOT NULL DEFAULT 0,
   net_pay          NUMERIC(12, 2) NOT NULL DEFAULT 0,
   status           TEXT NOT NULL DEFAULT 'pending-manager'
-                     CHECK (status IN ('pending-manager', 'pending-hr', 'pending-management', 'disbursed')),
+                     CHECK (status IN ('pending-manager', 'pending-hr', 'pending-management', 'disbursed', 'rejected')),
   manager_approved BOOLEAN NOT NULL DEFAULT false,
   hr_processed     BOOLEAN NOT NULL DEFAULT false,
   admin_approved   BOOLEAN NOT NULL DEFAULT false,
@@ -138,6 +138,8 @@ CREATE TABLE payroll_records (
   reimbursements   NUMERIC(12, 2) NOT NULL DEFAULT 0,
   bonus            NUMERIC(12, 2) NOT NULL DEFAULT 0,
   other_deductions NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  -- Why a Line Manager rejected this record (see sql/19_payroll_reject_with_remark.sql).
+  rejection_remark TEXT NOT NULL DEFAULT '',
   UNIQUE (employee_id, month)
 );
 

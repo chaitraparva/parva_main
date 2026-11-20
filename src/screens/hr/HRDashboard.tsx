@@ -30,7 +30,8 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
   // and never reaches HR as something to act on (see Leave.tsx's read-only
   // CRM Leave Log for visibility into those instead).
   const pendingLeave = leaves.filter(l => l.pendingWith === 'hr').length
-  const pendingPayroll = payroll.filter(p => p.status === 'pending-hr').length
+  // Records the Line Manager rejected also need HR to act (fix and send back).
+  const pendingPayroll = payroll.filter(p => p.status === 'pending-hr' || p.status === 'rejected').length
   // HR staff's own claims are approved by the Director, not HR — so they
   // aren't part of HR's "pending" count.
   const hrStaffIds = new Set(employees.filter(e => e.role === 'hr').map(e => e.id))

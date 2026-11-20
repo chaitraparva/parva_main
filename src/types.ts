@@ -54,7 +54,7 @@ export interface PayrollRecord {
   incentives: number
   deductions: number
   netPay: number
-  status: 'pending-manager' | 'pending-hr' | 'pending-management' | 'disbursed'
+  status: 'pending-manager' | 'pending-hr' | 'pending-management' | 'disbursed' | 'rejected'
   managerApproved: boolean
   hrProcessed: boolean
   adminApproved: boolean
@@ -69,6 +69,8 @@ export interface PayrollRecord {
   reimbursements?: number
   bonus?: number
   otherDeductions?: number
+  /** Why the Line Manager rejected this record (status 'rejected'). */
+  rejectionRemark?: string
 }
 
 export interface AttendanceRecord {
