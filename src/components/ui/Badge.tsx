@@ -35,8 +35,12 @@ export function AttendanceBadge({ status }: { status: string }) {
     absent: 'bg-red-50 text-red-700',
     late: 'bg-amber-50 text-amber-700',
     'half-day': 'bg-blue-50 text-blue-700',
+    holiday: 'bg-pink-50 text-pink-700',
+    'week-off': 'bg-gray-100 text-gray-600',
   }
   const labels: Record<string, string> = {
+    holiday: 'Holiday',
+    'week-off': 'Week-off',
     present: 'Present',
     absent: 'Absent',
     late: 'Late',

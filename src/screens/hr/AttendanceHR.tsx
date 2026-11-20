@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { AttendanceRecord, Employee, LeaveRequest } from '../../types'
+import type { AttendanceRecord, Employee, Holiday, LeaveRequest } from '../../types'
 import { Calendar, Plus, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import ClockCard from '../../components/ClockCard'
-import { ATTENDANCE_EXCLUDED_IDS, buildDayRows, isAbsentGroup, isAttended } from '../../lib/attendanceStatus'
+import { ATTENDANCE_EXCLUDED_IDS, buildDayRows, isAbsentGroup, isAttended, isDayOff } from '../../lib/attendanceStatus'
 import type { DayRow } from '../../lib/attendanceStatus'
 import { formatClock, nowInZone, timeZoneForLocation, zoneLabel } from '../../lib/clock'
 
@@ -14,9 +14,11 @@ const statusStyle: Record<string, { bg: string; text: string; label: string }> =
   absent: { bg: '#FEF2F2', text: '#DC2626', label: 'Absent' },
   late: { bg: '#FFFBEB', text: '#D97706', label: 'Late' },
   'half-day': { bg: '#F5F3FF', text: '#7C3AED', label: 'Half Day' },
+  holiday: { bg: '#FDF2F8', text: '#BE185D', label: 'Holiday' },
+  'week-off': { bg: '#F3F4F6', text: '#4B5563', label: 'Week-off' },
 }
 
-type AttStatus = 'present' | 'absent' | 'late' | 'half-day'
+type AttStatus = 'present' | 'absent' | 'late' | 'half-day' | 'holiday' | 'week-off'
 
 // Labels/colours for the derived per-day status shown in the log.
 const rowStyle: Record<DayRow['status'], { bg: string; text: string; label: string }> = {
@@ -25,6 +27,8 @@ const rowStyle: Record<DayRow['status'], { bg: string; text: string; label: stri
   'half-day': { bg: '#F5F3FF', text: '#7C3AED', label: 'Half Day' },
   absent: { bg: '#FEF2F2', text: '#DC2626', label: 'Absent' },
   leave: { bg: '#FFFBEB', text: '#D97706', label: 'On Leave' },
+  holiday: { bg: '#FDF2F8', text: '#BE185D', label: 'Holiday' },
+  'week-off': { bg: '#F3F4F6', text: '#4B5563', label: 'Week-off' },
 }
 
 // Heatmap day-rate buckets: 0 = good (≥85%), 1 = mid (70-84%), 2 = low (<70%)
@@ -39,12 +43,13 @@ interface AttendanceHRProps {
   employees: Employee[]
   attendance: AttendanceRecord[]
   leaves: LeaveRequest[]
+  holidays?: Holiday[]
   currentEmployeeId: string
   onAttendanceUpdate: (next: AttendanceRecord[]) => Promise<void>
   onAttendanceRefresh: () => Promise<void>
 }
 
-export default function AttendanceHR({ employees, attendance, leaves, currentEmployeeId, onAttendanceUpdate, onAttendanceRefresh }: AttendanceHRProps) {
+export default function AttendanceHR({ employees, attendance, leaves, holidays = [], currentEmployeeId, onAttendanceUpdate, onAttendanceRefresh }: AttendanceHRProps) {
   const trackedEmployees = employees.filter(e => !ATTENDANCE_EXCLUDED_IDS.includes(e.id))
   const [records, setRecordsLocal] = useState<AttendanceRecord[]>(attendance)
   useEffect(() => { setRecordsLocal(attendance) }, [attendance])
@@ -77,10 +82,11 @@ export default function AttendanceHR({ employees, attendance, leaves, currentEmp
 
   // One row per tracked employee for the chosen day. Nobody is ever "not
   // marked": no login that day = Absent (approved leave shows as On Leave).
-  const dayRows: DayRow[] = buildDayRows(employees, dateFilter, records, leaves)
+  const dayRows: DayRow[] = buildDayRows(employees, dateFilter, records, leaves, holidays)
   const attendedRows = dayRows.filter(r => isAttended(r.status))
   const absentRows = dayRows.filter(r => isAbsentGroup(r.status))
-  const headcount = dayRows.length
+  // People on a Holiday / Week-off are not part of the day's headcount.
+  const headcount = dayRows.filter(r => !isDayOff(r.status)).length
   const pct = (n: number) => (headcount > 0 ? `${Math.round((n / headcount) * 100)}%` : '—')
   const shownRows = groupFilter === 'attended' ? attendedRows : groupFilter === 'absent' ? absentRows : dayRows
   const isSunday = new Date(dateFilter + 'T00:00:00').getDay() === 0
@@ -89,22 +95,28 @@ export default function AttendanceHR({ employees, attendance, leaves, currentEmp
     wfh: dayRows.filter(r => r.status === 'wfh').length,
     halfDay: dayRows.filter(r => r.status === 'half-day').length,
     onLeave: dayRows.filter(r => r.status === 'leave').length,
+    holiday: dayRows.filter(r => r.status === 'holiday').length,
+    weekOff: dayRows.filter(r => r.status === 'week-off').length,
   }
 
   const markAttendance = () => {
     if (!markForm.employeeName || !markForm.date) return
     const emp = trackedEmployees.find(e => e.name === markForm.employeeName)
+    // A Holiday / Week-off has no login or logout time.
+    const off = markForm.status === 'holiday' || markForm.status === 'week-off'
+    const checkIn = off ? '' : markForm.checkIn
+    const checkOut = off ? '' : markForm.checkOut
     const existing = records.find(r => r.employeeId === (emp?.id || 'x') && r.date === markForm.date)
     if (existing) {
-      setRecords(prev => prev.map(r => r.id === existing.id ? { ...r, status: markForm.status, checkIn: markForm.checkIn, checkOut: markForm.checkOut } : r))
+      setRecords(prev => prev.map(r => r.id === existing.id ? { ...r, status: markForm.status, checkIn, checkOut } : r))
     } else {
       const newRec: AttendanceRecord = {
         id: `att-${Date.now()}`,
         employeeId: emp?.id || 'emp-x',
         employeeName: markForm.employeeName,
         date: markForm.date,
-        checkIn: markForm.checkIn,
-        checkOut: markForm.checkOut,
+        checkIn,
+        checkOut,
         status: markForm.status,
       }
       setRecords(prev => [...prev, newRec])
@@ -190,12 +202,14 @@ export default function AttendanceHR({ employees, attendance, leaves, currentEmp
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Check In</label>
               <input type="time" value={markForm.checkIn} onChange={e => setMarkForm(p => ({ ...p, checkIn: e.target.value }))}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
+                disabled={markForm.status === 'holiday' || markForm.status === 'week-off'}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none disabled:opacity-40" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Check Out</label>
               <input type="time" value={markForm.checkOut} onChange={e => setMarkForm(p => ({ ...p, checkOut: e.target.value }))}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none" />
+                disabled={markForm.status === 'holiday' || markForm.status === 'week-off'}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-muted focus:outline-none disabled:opacity-40" />
             </div>
           </div>
           <div className="flex gap-3">
@@ -238,7 +252,9 @@ export default function AttendanceHR({ employees, attendance, leaves, currentEmp
       </div>
       <p className="text-xs text-muted-foreground -mt-2">
         Present {breakdown.present} · Work from home {breakdown.wfh} · Half day {breakdown.halfDay}
-        {breakdown.onLeave > 0 ? ` · On leave ${breakdown.onLeave}` : ''}. Anyone who hasn't logged in counts as absent.
+        {breakdown.onLeave > 0 ? ` · On leave ${breakdown.onLeave}` : ''}
+        {breakdown.holiday > 0 ? ` · Holiday ${breakdown.holiday}` : ''}
+        {breakdown.weekOff > 0 ? ` · Week-off ${breakdown.weekOff}` : ''}. Holiday and Week-off are not counted as absent. Anyone who hasn't logged in counts as absent.
       </p>
 
       {/* Daily log */}
@@ -366,7 +382,16 @@ export default function AttendanceHR({ employees, attendance, leaves, currentEmp
                 )
               }
               // Out of the whole tracked team: anyone who didn't log in is absent.
-              const rows = buildDayRows(employees, dateStr, records, leaves)
+              const rows = buildDayRows(employees, dateStr, records, leaves, holidays).filter(r => !isDayOff(r.status))
+              if (rows.length === 0) {
+                return (
+                  <div key={day} className="h-9 rounded-md flex items-center justify-center text-xs"
+                    title="Holiday / Week-off for everyone"
+                    style={{ backgroundColor: '#FDF2F8', color: '#BE185D' }}>
+                    {day}
+                  </div>
+                )
+              }
               const presentCount = rows.filter(r => isAttended(r.status)).length
               const headcount = rows.length
               const rate = headcount > 0 ? presentCount / headcount : 0

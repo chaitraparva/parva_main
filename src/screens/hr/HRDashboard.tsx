@@ -1,7 +1,7 @@
 import { Users, Calendar, CreditCard, TicketIcon, Receipt, DoorOpen, AlertCircle, CheckCircle, Clock, TrendingUp, Building2, UserCheck } from 'lucide-react'
-import type { Employee, LeaveRequest, PayrollRecord, AttendanceRecord, EmployeeTicket, ExpenseClaim, ExitRecord } from '../../types'
+import type { Employee, LeaveRequest, PayrollRecord, AttendanceRecord, EmployeeTicket, ExpenseClaim, ExitRecord, Holiday } from '../../types'
 import ClockCard from '../../components/ClockCard'
-import { buildDayRows, isAbsentGroup, isAttended } from '../../lib/attendanceStatus'
+import { buildDayRows, isAbsentGroup, isAttended, isDayOff } from '../../lib/attendanceStatus'
 import { nowInZone, timeZoneForLocation } from '../../lib/clock'
 
 interface OnboardingCandidateLite { id: string; onboardingProgress: number }
@@ -18,12 +18,13 @@ interface Props {
   onboarding: OnboardingCandidateLite[]
   currentEmployee?: Employee
   onAttendanceRefresh: () => Promise<void>
+  holidays?: Holiday[]
 }
 
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
 
-export default function HRDashboard({ navigate, employees, leaves, payroll, attendance, tickets, expenses, exits, onboarding, currentEmployee, onAttendanceRefresh }: Props) {
+export default function HRDashboard({ navigate, employees, leaves, payroll, attendance, tickets, expenses, exits, onboarding, currentEmployee, onAttendanceRefresh, holidays = [] }: Props) {
   const firstName = currentEmployee?.name?.split(' ')[0] || 'there'
   // A manager's or finance employee's own leave request lands with HR
   // directly. CRM leave is decided entirely by the employee's line manager
@@ -44,8 +45,9 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
   // full tracked team, and anyone who hasn't logged in counts as Absent --
   // there is no "not marked" bucket.
   const todayIso = nowInZone(timeZoneForLocation(currentEmployee?.location)).date
-  const todayRows = buildDayRows(employees, todayIso, attendance, leaves)
-  const attendancePercentBase = todayRows.length
+  const todayRows = buildDayRows(employees, todayIso, attendance, leaves, holidays)
+  // Holiday / Week-off people aren't part of today's headcount.
+  const attendancePercentBase = todayRows.filter(r => !isDayOff(r.status)).length
   const attendedToday = todayRows.filter(r => isAttended(r.status))
   const absentToday = todayRows.filter(r => isAbsentGroup(r.status))
 

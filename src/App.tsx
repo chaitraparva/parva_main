@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type {
   Role, LeaveRequest, Employee, ExpenseClaim, PayrollRecord, AttendanceRecord,
   EmployeeTicket, ExitRecord, JobRequisition, Candidate, PerformanceGoal,
-  PerformanceReview, Notification, TimesheetEntry,
+  PerformanceReview, Notification, TimesheetEntry, Holiday,
 } from './types'
 import * as api from './lib/api'
 import type { Session } from './lib/api'
@@ -26,6 +26,7 @@ import Notifications from './screens/Notifications'
 import Settings from './screens/Settings'
 import Profile from './screens/Profile'
 import OrgChart from './screens/OrgChart'
+import Holidays from './screens/Holidays'
 import MyPortal from './screens/crm/MyPortal'
 import MyTimesheet from './screens/crm/MyTimesheet'
 import TeamTimesheet from './screens/hr/TeamTimesheet'
@@ -222,6 +223,9 @@ export default function App() {
   const [payrollLoaded, setPayrollLoaded] = useState(false)
   // Attendance records are real now too — see rawAttendance/attendance below.
   const [rawAttendance, setRawAttendance] = useState<api.RawAttendanceRecord[]>([])
+  // The Annual Holiday List (all branches) — see screens/Holidays.tsx.
+  const [rawHolidays, setRawHolidays] = useState<api.RawHoliday[]>([])
+  const [holidaysLoaded, setHolidaysLoaded] = useState(false)
   const [attendanceLoaded, setAttendanceLoaded] = useState(false)
   // Timesheet entries are real now too — see rawTimesheet/timesheet below.
   // Previously these lived only in localStorage with a hardcoded seed (see
@@ -450,6 +454,9 @@ export default function App() {
   // components/ClockCard.tsx) — re-read attendance so every screen is current.
   const refreshAttendance = async () => {
     setRawAttendance(await api.fetchAttendanceRecords())
+  }
+  const refreshHolidays = async () => {
+    setRawHolidays(await api.fetchHolidays())
   }
   // Timesheets don't follow the same "diff a whole array" shape as the
   // modules above — MyTimesheet.tsx saves exactly one day's entry at a time.
@@ -730,6 +737,8 @@ export default function App() {
     setPayrollLoaded(false)
     setRawAttendance([])
     setAttendanceLoaded(false)
+    setRawHolidays([])
+    setHolidaysLoaded(false)
     setRawTimesheet([])
     setTimesheetLoaded(false)
     setRawExpenses([])
@@ -841,6 +850,23 @@ export default function App() {
       })()
     return () => { cancelled = true }
   }, [role, attendanceLoaded])
+
+  // Same pattern, for the Annual Holiday List.
+  useEffect(() => {
+    if (!role || holidaysLoaded) return
+    let cancelled = false
+      ; (async () => {
+        try {
+          const rows = await api.fetchHolidays()
+          if (!cancelled) setRawHolidays(rows)
+        } catch {
+          // Leave whatever's already in state rather than blanking the screen.
+        } finally {
+          if (!cancelled) setHolidaysLoaded(true)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [role, holidaysLoaded])
 
   // Same pattern, for timesheet entries.
   useEffect(() => {
@@ -1073,6 +1099,8 @@ export default function App() {
     }
   })
 
+  const holidays: Holiday[] = rawHolidays.map(h => ({ id: String(h.id), branch: h.branch, date: toDateOnly(h.date), name: h.name }))
+
   // Same idea — attendance_records doesn't store the employee's name either.
   const attendance: AttendanceRecord[] = rawAttendance.map(r => {
     const emp = employees.find(e => e.id === r.employeeId)
@@ -1278,6 +1306,7 @@ export default function App() {
             attendance={attendance}
             onAttendanceRefresh={refreshAttendance}
             currentEmployee={currentEmployee}
+            holidays={holidays}
           />
         )
       case 'finance-portal':
@@ -1310,8 +1339,10 @@ export default function App() {
         return <Directory employees={activeEmployees} currentEmployeeId={employeeId} onEmployeesUpdate={onEmployeesUpdate} />
       case 'org-chart':
         return <OrgChart employees={activeEmployees} />
+      case 'holidays':
+        return <Holidays employees={activeEmployees} currentEmployee={currentEmployee} holidays={holidays} canEdit={role === 'hr' || role === 'management'} onHolidaysRefresh={refreshHolidays} />
       case 'attendance-hr':
-        return <AttendanceHR employees={activeEmployees} attendance={attendance} leaves={leaves} currentEmployeeId={employeeId} onAttendanceUpdate={onAttendanceUpdate} onAttendanceRefresh={refreshAttendance} />
+        return <AttendanceHR employees={activeEmployees} attendance={attendance} leaves={leaves} holidays={holidays} currentEmployeeId={employeeId} onAttendanceUpdate={onAttendanceUpdate} onAttendanceRefresh={refreshAttendance} />
       case 'my-timesheet':
         return <MyTimesheet employeeId={employeeId} employees={employees} timesheet={timesheet} onSaveEntry={onSaveTimesheetEntry} onDeleteEntry={onDeleteTimesheetEntry} />
       case 'team-timesheet':
@@ -1337,7 +1368,7 @@ export default function App() {
       case 'profile':
         return <Profile employeeId={employeeId} employees={employees} onEmployeesUpdate={onEmployeesUpdate} payroll={payroll} attendance={attendance} leaves={leaves} />
       default:
-        return <HRDashboard navigate={navigate} employees={activeEmployees} leaves={leaves} payroll={payroll} attendance={attendance} tickets={tickets} expenses={expenses} exits={exits} onboarding={onboarding} currentEmployee={currentEmployee} onAttendanceRefresh={refreshAttendance} />
+        return <HRDashboard navigate={navigate} employees={activeEmployees} leaves={leaves} payroll={payroll} attendance={attendance} tickets={tickets} expenses={expenses} exits={exits} onboarding={onboarding} currentEmployee={currentEmployee} onAttendanceRefresh={refreshAttendance} holidays={holidays} />
     }
   }
 

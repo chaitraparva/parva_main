@@ -1,4 +1,4 @@
-import { LayoutDashboard, FolderOpen, Calendar, UserCheck, CreditCard, Receipt, Building2, DoorOpen, TicketIcon, Bell, Settings, LogOut, BarChart2, Briefcase, ClipboardCheck, TrendingUp, Network, X, ClipboardList } from 'lucide-react'
+import { LayoutDashboard, FolderOpen, Calendar, UserCheck, CreditCard, Receipt, Building2, DoorOpen, TicketIcon, Bell, Settings, LogOut, BarChart2, Briefcase, ClipboardCheck, TrendingUp, Network, X, ClipboardList, CalendarDays } from 'lucide-react'
 import type { Role, Employee } from '../../types'
 
 interface NavItem { id: string; label: string; icon: React.ReactNode; section: string }
@@ -11,18 +11,21 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { id: 'my-portal', label: 'My Portal', icon: <LayoutDashboard size={18} />, section: 'Self Service' },
     { id: 'my-timesheet', label: 'My Timesheet', icon: <ClipboardList size={18} />, section: 'Self Service' },
     { id: 'org-chart', label: 'Organisation Chart', icon: <Network size={18} />, section: 'Company' },
+    { id: 'holidays', label: 'Holiday List', icon: <CalendarDays size={18} />, section: 'Company' },
   ],
   manager: [
     { id: 'manager-portal', label: 'Team Overview', icon: <LayoutDashboard size={18} />, section: 'Overview' },
     { id: 'attendance-hr', label: 'Attendance', icon: <Calendar size={18} />, section: 'Team' },
     { id: 'team-timesheet', label: 'Team Timesheet', icon: <ClipboardList size={18} />, section: 'Team' },
     { id: 'org-chart', label: 'Organisation Chart', icon: <Network size={18} />, section: 'Company' },
+    { id: 'holidays', label: 'Holiday List', icon: <CalendarDays size={18} />, section: 'Company' },
   ],
   hr: [
     { id: 'hr-dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} />, section: 'Overview' },
     { id: 'recruitment', label: 'Recruitment', icon: <Briefcase size={18} />, section: 'Recruitment Management' },
     { id: 'directory', label: 'Employee Directory', icon: <FolderOpen size={18} />, section: 'Core HR' },
     { id: 'org-chart', label: 'Organisation Chart', icon: <Network size={18} />, section: 'Core HR' },
+    { id: 'holidays', label: 'Holiday List', icon: <CalendarDays size={18} />, section: 'Core HR' },
     { id: 'attendance-hr', label: 'Attendance', icon: <Calendar size={18} />, section: 'Leave & Attendance Management' },
     { id: 'leave', label: 'Leave Management', icon: <UserCheck size={18} />, section: 'Leave & Attendance Management' },
     { id: 'team-timesheet', label: 'Team Timesheet', icon: <ClipboardList size={18} />, section: 'Leave & Attendance Management' },
@@ -39,12 +42,14 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { id: 'expense-approvals', label: 'HR Expense Approvals', icon: <Receipt size={18} />, section: 'Approvals' },
     { id: 'directory', label: 'Employee Directory', icon: <FolderOpen size={18} />, section: 'People' },
     { id: 'org-chart', label: 'Organisation Chart', icon: <Network size={18} />, section: 'People' },
+    { id: 'holidays', label: 'Holiday List', icon: <CalendarDays size={18} />, section: 'People' },
     { id: 'attendance-hr', label: 'Attendance', icon: <Calendar size={18} />, section: 'People' },
   ],
   finance: [
     { id: 'finance-portal', label: 'Finance Overview', icon: <LayoutDashboard size={18} />, section: 'Overview' },
     { id: 'directory', label: 'Employee Directory', icon: <FolderOpen size={18} />, section: 'People' },
     { id: 'org-chart', label: 'Organisation Chart', icon: <Network size={18} />, section: 'People' },
+    { id: 'holidays', label: 'Holiday List', icon: <CalendarDays size={18} />, section: 'People' },
   ],
 }
 

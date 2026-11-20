@@ -24,6 +24,7 @@ const screenTitles: Record<string, string> = {
   'mgmt-portal': 'Executive Portal',
   'finance-portal': 'Finance Portal',
   'org-chart': 'Organisation Chart',
+  'holidays': 'Annual Holiday List',
 }
 
 // Every role now covers more than one real person (or resolves to whoever

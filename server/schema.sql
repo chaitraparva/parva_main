@@ -153,7 +153,7 @@ CREATE TABLE attendance_records (
   date         DATE NOT NULL,
   check_in     TEXT NOT NULL DEFAULT '',
   check_out    TEXT NOT NULL DEFAULT '',
-  status       TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late', 'half-day')),
+  status       TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late', 'half-day', 'holiday', 'week-off')),
   work_mode    TEXT NOT NULL DEFAULT 'office' CHECK (work_mode IN ('office', 'wfh')),
   UNIQUE (employee_id, date)
 );
@@ -414,3 +414,25 @@ CREATE TABLE onboarding_candidates (
 );
 
 CREATE INDEX idx_onboarding_candidates_created_at ON onboarding_candidates(created_at);
+
+
+-- ───────────────────────── Holidays (see sql/22_holidays_and_attendance_statuses.sql) ─────────────────────────
+
+CREATE TABLE holidays (
+  id          BIGSERIAL PRIMARY KEY,
+  branch      TEXT NOT NULL,
+  date        DATE NOT NULL,
+  name        TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (branch, date)
+);
+
+CREATE TABLE holiday_list_files (
+  id            BIGSERIAL PRIMARY KEY,
+  branch        TEXT NOT NULL,
+  year          INTEGER NOT NULL,
+  file_name     TEXT NOT NULL,
+  storage_path  TEXT NOT NULL,
+  uploaded_by   TEXT,
+  uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);

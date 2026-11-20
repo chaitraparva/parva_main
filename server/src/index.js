@@ -10,12 +10,14 @@ import adminRouter from './routes/admin.js'
 import employeesRouter from './routes/employees.js'
 import documentsRouter from './routes/documents.js'
 import expenseReceiptsRouter from './routes/expense-receipts.js'
+import holidayListsRouter from './routes/holiday-lists.js'
 import profilePhotoRouter from './routes/profile-photo.js'
 import ticketCommentsRouter from './routes/ticket-comments.js'
 import {
   leaveRequestsRouter,
   payrollRecordsRouter,
   attendanceRouter,
+  holidaysRouter,
   timesheetEntriesRouter,
   expenseClaimsRouter,
   ticketsRouter,
@@ -71,6 +73,8 @@ app.use('/api/payroll-records', payrollRecordsRouter)
 // Must be registered BEFORE the generic /:id routes below it.
 app.use('/api/attendance-records', attendanceClockRouter)
 app.use('/api/attendance-records', attendanceRouter)
+app.use('/api/holidays', holidaysRouter)
+app.use('/api/holiday-lists', holidayListsRouter)
 app.use('/api/timesheet-entries', timesheetEntriesRouter)
 app.use('/api/expense-claims', expenseClaimsRouter)
 app.use('/api/tickets', ticketsRouter)

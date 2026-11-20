@@ -719,3 +719,47 @@ export async function updateOnboardingCandidate(id: string, patch: Partial<Omit<
   })
   return data.onboarding_candidate
 }
+
+
+// ─────────────────────── Holidays (Annual Holiday List per branch) ───────────────────────
+export interface RawHoliday { id: string; branch: string; date: string; name: string }
+
+export async function fetchHolidays(): Promise<RawHoliday[]> {
+  const data = await request<{ holidays: RawHoliday[] }>('/api/holidays', { method: 'GET' })
+  return data.holidays
+}
+
+export async function createHoliday(input: { branch: string; date: string; name: string }): Promise<RawHoliday> {
+  const data = await request<{ holiday: RawHoliday }>('/api/holidays', { method: 'POST', body: JSON.stringify(input) })
+  return data.holiday
+}
+
+export async function deleteHoliday(id: string): Promise<void> {
+  await request<null>(`/api/holidays/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export interface RawHolidayListFile { id: string; branch: string; year: number; fileName: string; uploadedAt: string }
+
+export async function fetchHolidayListFiles(): Promise<RawHolidayListFile[]> {
+  const data = await request<{ files: RawHolidayListFile[] }>('/api/holiday-lists', { method: 'GET' })
+  return data.files
+}
+
+export async function uploadHolidayListFile(opts: { branch: string; year: number; file: File }): Promise<RawHolidayListFile> {
+  const dataBase64 = await fileToBase64(opts.file)
+  const data = await request<{ file: RawHolidayListFile }>('/api/holiday-lists', {
+    method: 'POST',
+    body: JSON.stringify({ branch: opts.branch, year: opts.year, filename: opts.file.name, contentType: opts.file.type, dataBase64 }),
+  })
+  return data.file
+}
+
+export async function fetchHolidayListDownloadUrl(id: string, downloadFilename?: string): Promise<string> {
+  const query = downloadFilename ? `?download=${encodeURIComponent(downloadFilename)}` : ''
+  const data = await request<{ downloadUrl: string }>(`/api/holiday-lists/${encodeURIComponent(id)}/download-url${query}`, { method: 'GET' })
+  return data.downloadUrl
+}
+
+export async function deleteHolidayListFile(id: string): Promise<void> {
+  await request<null>(`/api/holiday-lists/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}

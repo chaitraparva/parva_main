@@ -1,7 +1,7 @@
 import ClockCard from '../../components/ClockCard'
 import { buildDayRows, isAbsentGroup } from '../../lib/attendanceStatus'
 import { useState } from 'react'
-import type { LeaveRequest, PayrollRecord, Employee, EmployeeTicket, ExitRecord, AttendanceRecord } from '../../types'
+import type { LeaveRequest, PayrollRecord, Employee, EmployeeTicket, ExitRecord, AttendanceRecord, Holiday } from '../../types'
 import { sortByRosterOrder } from '../../lib/orgOrder'
 
 const navy = '#1C2B4A'
@@ -43,9 +43,10 @@ interface Props {
   attendance: AttendanceRecord[]
   onAttendanceRefresh: () => Promise<void>
   currentEmployee?: Employee
+  holidays?: Holiday[]
 }
 
-export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: payrollProp, tickets: employeeTickets, exits: exitRecords, attendance, onAttendanceRefresh, currentEmployee }: Props) {
+export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: payrollProp, tickets: employeeTickets, exits: exitRecords, attendance, onAttendanceRefresh, currentEmployee, holidays = [] }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
 
   // Leave approvals — management only ever acts on HR's own leave requests
@@ -80,7 +81,7 @@ export default function MgmtPortal({ leaves, onLeaveUpdate, employees, payroll: 
   // the HR Attendance screen — see lib/attendanceStatus.ts.
   const todayStr = new Date().toLocaleDateString('en-CA')
   const absentTodayIds = new Set(
-    buildDayRows(employees, todayStr, attendance, leaves)
+    buildDayRows(employees, todayStr, attendance, leaves, holidays)
       .filter(r => isAbsentGroup(r.status))
       .map(r => r.employee.id),
   )

@@ -79,9 +79,19 @@ export function computeAttendanceSummary(
   const monthDays = daysBetweenInclusive(periodStart, periodEnd)
   const weeklyOff = countSundays(periodStart, periodEnd)
   const nationalHolidays = Math.round(NATIONAL_HOLIDAYS_PER_ANNUM / 12)
-  const workingDays = Math.max(0, monthDays - weeklyOff - nationalHolidays)
 
   const inRange = (iso: string) => iso >= periodStart && iso <= periodEnd
+
+  // Days HR marked as a Holiday or Week-off for this person (other than
+  // Sundays, which are already the weekly off) are days off: not working days,
+  // so they can never count as absent / loss of pay.
+  const markedOffDays = new Set(
+    attendance
+      .filter(a => a.employeeId === employeeId && inRange(a.date) && (a.status === 'holiday' || a.status === 'week-off'))
+      .map(a => a.date)
+      .filter(d => new Date(d + 'T00:00:00Z').getUTCDay() !== 0),
+  ).size
+  const workingDays = Math.max(0, monthDays - weeklyOff - nationalHolidays - markedOffDays)
 
   const myAttendance = attendance.filter(a => a.employeeId === employeeId && inRange(a.date))
   const daysPresent = myAttendance.reduce((sum, a) => {

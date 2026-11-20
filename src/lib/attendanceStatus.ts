@@ -1,9 +1,10 @@
-import type { AttendanceRecord, Employee, LeaveRequest } from '../types'
+import type { AttendanceRecord, Employee, Holiday, LeaveRequest } from '../types'
+import { branchOf, holidayFor } from './holidays'
 
 // Group leadership (CEO, Directors) aren't tracked in day-to-day attendance.
 export const ATTENDANCE_EXCLUDED_IDS = ['DF230001', 'DF230002', 'PA230045'] // Neelesh H P, Akshita Raturi, Chaitra
 
-export type DayStatus = 'present' | 'wfh' | 'half-day' | 'absent' | 'leave'
+export type DayStatus = 'present' | 'wfh' | 'half-day' | 'absent' | 'leave' | 'holiday' | 'week-off'
 
 export interface DayRow {
   employee: Employee
@@ -22,6 +23,7 @@ export function buildDayRows(
   date: string,
   records: AttendanceRecord[],
   leaves: LeaveRequest[],
+  holidays: Holiday[] = [],
 ): DayRow[] {
   const tracked = employees.filter(e => !ATTENDANCE_EXCLUDED_IDS.includes(e.id))
   return tracked.map(employee => {
@@ -34,6 +36,11 @@ export function buildDayRows(
       const status: DayStatus = rec.status === 'half-day' ? 'half-day' : rec.workMode === 'wfh' ? 'wfh' : 'present'
       return { employee, status, checkIn: rec.checkIn, checkOut: rec.checkOut, note: rec.workMode === 'wfh' ? 'Work from home' : '' }
     }
+    // HR marked this day as a Holiday or a Week-off for this person.
+    if (rec && (rec.status === 'holiday' || rec.status === 'week-off')) {
+      const note = rec.status === 'holiday' ? (holidayFor(holidays, branchOf(employee.location), date)?.name || '') : ''
+      return { employee, status: rec.status, checkIn: '', checkOut: '', note }
+    }
     if (rec && rec.status === 'half-day') {
       // Manually marked by HR without a login time.
       return { employee, status: 'half-day', checkIn: rec.checkIn, checkOut: rec.checkOut, note: '' }
@@ -41,6 +48,9 @@ export function buildDayRows(
     if (rec && (rec.status === 'present' || rec.status === 'late')) {
       return { employee, status: rec.workMode === 'wfh' ? 'wfh' : 'present', checkIn: rec.checkIn, checkOut: rec.checkOut, note: 'Marked by HR' }
     }
+    // A day on the branch's Annual Holiday List — nobody is absent on it.
+    const listed = holidayFor(holidays, branchOf(employee.location), date)
+    if (listed && !rec) return { employee, status: 'holiday', checkIn: '', checkOut: '', note: listed.name }
     if (leave) {
       if (leave.halfDay) return { employee, status: 'half-day', checkIn: '', checkOut: '', note: 'Half-day leave' }
       return { employee, status: 'leave', checkIn: '', checkOut: '', note: `On ${leave.type} leave` }
@@ -51,3 +61,5 @@ export function buildDayRows(
 
 export const isAttended = (s: DayStatus) => s === 'present' || s === 'wfh' || s === 'half-day'
 export const isAbsentGroup = (s: DayStatus) => s === 'absent' || s === 'leave'
+// A Holiday or Week-off is a day off: not attended, not absent, and not counted in the team headcount.
+export const isDayOff = (s: DayStatus) => s === 'holiday' || s === 'week-off'

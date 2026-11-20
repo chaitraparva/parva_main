@@ -80,7 +80,7 @@ export interface AttendanceRecord {
   date: string
   checkIn: string
   checkOut: string
-  status: 'present' | 'absent' | 'late' | 'half-day'
+  status: 'present' | 'absent' | 'late' | 'half-day' | 'holiday' | 'week-off'
   // Which button was pressed at login: the normal Login (office) or the
   // separate Work From Home button. Older rows default to 'office'.
   workMode?: 'office' | 'wfh'
@@ -326,4 +326,21 @@ export interface TimesheetEntry {
   selfFundedLeads: boolean
   tasks: string
   loggedAt: string
+}
+
+// One day on a branch's Annual Holiday List.
+export interface Holiday {
+  id: string
+  branch: string
+  date: string // YYYY-MM-DD
+  name: string
+}
+
+// A PDF / image of a branch's holiday list uploaded by HR.
+export interface HolidayListFile {
+  id: string
+  branch: string
+  year: number
+  fileName: string
+  uploadedAt: string
 }

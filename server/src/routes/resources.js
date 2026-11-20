@@ -212,3 +212,14 @@ export const onboardingCandidatesRouter = crudRouter({
   // correctly) — it's listed anyway for explicitness/consistency.
   jsonColumns: ['checklistDone', 'docItems'],
 })
+
+// The Annual Holiday List: one row per branch per holiday date. Everyone can
+// read it (GET is open to any signed-in employee); only HR and management can
+// add or remove holidays.
+export const holidaysRouter = crudRouter({
+  table: 'holidays',
+  allowedColumns: ['branch', 'date', 'name'],
+  writeRoles: ['hr', 'management'],
+  deleteRoles: ['hr', 'management'],
+  listLimit: 3000,
+})
