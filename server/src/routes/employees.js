@@ -16,15 +16,28 @@ const PUBLIC_COLUMNS = `
   dob, gender, aadhar_number, pan_number
 `
 
+// Salary is private: only HR and management (Directors) see anyone's salary
+// structure. Everyone else gets 0 for other people's pay fields (their own row
+// is left alone, because their own payslip needs it).
+const SALARY_COLUMNS = ['base_salary', 'hra', 'conveyance_allowance', 'medical_allowance', 'other_allowance']
+const SEES_ALL_SALARIES = ['hr', 'management']
+
+function hideOthersSalary(auth, row) {
+  if (SEES_ALL_SALARIES.includes(auth.loginRole) || row.id === auth.employeeId) return row
+  const out = { ...row }
+  for (const c of SALARY_COLUMNS) if (c in out) out[c] = 0
+  return out
+}
+
 router.get('/', requireAuth, asyncHandler(async (req, res) => {
   const { rows } = await pool.query(`SELECT ${PUBLIC_COLUMNS} FROM employees ORDER BY name`)
-  res.json({ employees: rows.map(toCamel) })
+  res.json({ employees: rows.map(r => toCamel(hideOthersSalary(req.auth, r))) })
 }))
 
 router.get('/:id', requireAuth, asyncHandler(async (req, res) => {
   const { rows } = await pool.query(`SELECT ${PUBLIC_COLUMNS} FROM employees WHERE id = $1`, [req.params.id])
   if (!rows[0]) return res.status(404).json({ error: 'Employee not found.' })
-  res.json({ employee: toCamel(rows[0]) })
+  res.json({ employee: toCamel(hideOthersSalary(req.auth, rows[0])) })
 }))
 
 // Self-service profile editing — an employee may update their own personal/

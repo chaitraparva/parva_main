@@ -53,10 +53,10 @@ function PasswordField({ value, onChange, onKeyDown, placeholder, autoComplete, 
 // server-side now (employees.login_roles in Postgres), not here.
 const ROLE_CARDS: { role: Role; title: string; desc: string }[] = [
   { role: 'crm', title: 'CRM Executive', desc: 'Apply leave, expenses & raise tickets' },
-  { role: 'manager', title: 'Line Manager', desc: 'Approve team requests & manage payroll' },
+  { role: 'manager', title: 'Line Manager', desc: 'Approve team leave, attendance & expenses' },
   { role: 'hr', title: 'HR Manager', desc: 'Full HR operations across both companies' },
   { role: 'management', title: 'CEO', desc: 'Final approvals & org-wide oversight' },
-  { role: 'finance', title: 'Finance Manager', desc: 'Payroll sign-off & expense reimbursements' },
+  { role: 'finance', title: 'Finance Manager', desc: 'Expense reimbursements' },
 ]
 
 const HIERARCHY = [

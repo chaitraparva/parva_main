@@ -1301,7 +1301,6 @@ export default function App() {
             employees={activeEmployees}
             attendance={attendance}
             onAttendanceRefresh={refreshAttendance}
-            payroll={payroll} onPayrollUpdate={onPayrollUpdate}
           />
         )
       case 'mgmt-portal':
@@ -1321,7 +1320,6 @@ export default function App() {
       case 'finance-portal':
         return (
           <FinancePortal
-            payroll={payroll} onPayrollUpdate={onPayrollUpdate}
             {...sharedExpenseProps}
             {...sharedLeaveProps}
             employees={employees}
@@ -1345,7 +1343,7 @@ export default function App() {
       case 'performance':
         return <Performance goals={goals} reviews={reviews} />
       case 'directory':
-        return <Directory employees={activeEmployees} currentEmployeeId={employeeId} onEmployeesUpdate={onEmployeesUpdate} />
+        return <Directory employees={activeEmployees} currentEmployeeId={employeeId} onEmployeesUpdate={onEmployeesUpdate} canSeeSalary={role === 'hr' || role === 'management'} />
       case 'org-chart':
         return <OrgChart employees={activeEmployees} />
       case 'holidays':

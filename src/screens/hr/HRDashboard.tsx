@@ -31,8 +31,8 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
   // and never reaches HR as something to act on (see Leave.tsx's read-only
   // CRM Leave Log for visibility into those instead).
   const pendingLeave = leaves.filter(l => l.pendingWith === 'hr').length
-  // Records the Line Manager rejected also need HR to act (fix and send back).
-  const pendingPayroll = payroll.filter(p => p.status === 'pending-hr' || p.status === 'rejected').length
+  // Older payslips that were generated but never sent to the employee.
+  const pendingPayroll = payroll.filter(p => p.status !== 'disbursed').length
   // HR staff's own claims are approved by the Director, not HR — so they
   // aren't part of HR's "pending" count.
   const hrStaffIds = new Set(employees.filter(e => e.role === 'hr').map(e => e.id))
@@ -54,7 +54,7 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
   const QUICK_ACTIONS = [
     { label: 'Employee Directory', screen: 'directory', icon: Users, color: navy, count: employees.length, sub: 'employees' },
     { label: 'Leave Requests', screen: 'leave', icon: UserCheck, color: '#D97706', count: pendingLeave, sub: 'pending' },
-    { label: 'Payroll', screen: 'payroll-hr', icon: CreditCard, color: '#0F766E', count: pendingPayroll, sub: 'to process' },
+    { label: 'Payroll', screen: 'payroll-hr', icon: CreditCard, color: '#0F766E', count: pendingPayroll, sub: 'not sent yet' },
     { label: 'Attendance', screen: 'attendance-hr', icon: Calendar, color: navy, count: attendedToday.length, sub: 'attended today' },
     { label: 'Expense Claims', screen: 'expense-hr', icon: Receipt, color: '#7C3AED', count: pendingExpenses, sub: 'pending' },
     { label: 'Employee Tickets', screen: 'tickets-hr', icon: TicketIcon, color: '#DC2626', count: openTickets, sub: 'open' },
@@ -189,28 +189,12 @@ export default function HRDashboard({ navigate, employees, leaves, payroll, atte
           </div>
           <p className="text-xs text-muted-foreground mb-3">
             {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
-            {payroll.length > 0 ? ` · ${pendingPayroll} pending HR action` : ' · No payroll records yet'}
+            {payroll.length > 0 ? ' · Payslips go straight to the employee once generated' : ' · No payslips generated yet'}
           </p>
-          {/* Stage bar — lit up per stage based on whether any real record is
-              currently sitting there, not a fixed "we're always at stage 2". */}
-          <div className="flex items-center gap-1 mb-4">
-            {([
-              ['Manager', payroll.some(p => p.status === 'pending-manager')],
-              ['HR', payroll.some(p => p.status === 'pending-hr')],
-              ['Admin', payroll.some(p => p.status === 'pending-management')],
-              ['Disbursed', payroll.some(p => p.status === 'disbursed')],
-            ] as [string, boolean][]).map(([stage, active]) => (
-              <div key={stage} className="flex-1 flex flex-col items-center gap-1">
-                <div className="h-2 w-full rounded-full" style={{ backgroundColor: active ? navy : '#E5DFD5' }} />
-                <span className="text-[9px] font-medium" style={{ color: active ? navy : '#9CA3AF' }}>{stage}</span>
-              </div>
-            ))}
-          </div>
           <div className="space-y-2">
             {[
-              { label: 'Pending HR Processing', value: payroll.filter(p => p.status === 'pending-hr').length, color: '#F59E0B' },
-              { label: 'Processed by HR', value: payroll.filter(p => p.hrProcessed).length, color: '#10B981' },
-              { label: 'Disbursed', value: payroll.filter(p => p.status === 'disbursed').length, color: '#6B7280' },
+              { label: 'Payslips sent', value: payroll.filter(p => p.status === 'disbursed').length, color: '#10B981' },
+              { label: 'Generated, not sent yet', value: payroll.filter(p => p.status !== 'disbursed').length, color: '#F59E0B' },
             ].map(s => (
               <div key={s.label} className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">{s.label}</span>

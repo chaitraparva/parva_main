@@ -17,6 +17,8 @@ interface Props {
   employees: Employee[]
   currentEmployeeId?: string
   onEmployeesUpdate?: (list: Employee[]) => void
+  // Only HR and management (Directors) may see anyone's salary.
+  canSeeSalary?: boolean
 }
 
 // Actually persists the salary/personal-detail patch to the server (see
@@ -37,7 +39,7 @@ async function saveEmployeeDetails(
   onEmployeesUpdate(employees.map(e => e.id === id ? updated : e))
 }
 
-export default function Directory({ employees, currentEmployeeId, onEmployeesUpdate }: Props) {
+export default function Directory({ employees, currentEmployeeId, onEmployeesUpdate, canSeeSalary = false }: Props) {
   const [search, setSearch] = useState('')
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [selected, setSelected] = useState<string | null>(null)
@@ -231,7 +233,7 @@ export default function Directory({ employees, currentEmployeeId, onEmployeesUpd
                 { label: 'Employee ID', value: formatEmpId(selectedEmp.id) },
                 { label: 'Join Date', value: selectedEmp.joinDate },
                 { label: 'Department', value: selectedEmp.department },
-                { label: 'Base Salary', value: `₹${selectedEmp.baseSalary.toLocaleString('en-IN')}` },
+                ...(canSeeSalary ? [{ label: 'Base Salary', value: `₹${selectedEmp.baseSalary.toLocaleString('en-IN')}` }] : []),
                 { label: 'Leads', value: selectedEmp.role === 'agent' ? `${selectedEmp.leadsAssigned}` : 'N/A' },
               ].map((info) => (
                 <div key={info.label} className="p-3 rounded-lg bg-muted">
@@ -241,7 +243,7 @@ export default function Directory({ employees, currentEmployeeId, onEmployeesUpd
               ))}
             </div>
           </div>
-          {onEmployeesUpdate && (
+          {onEmployeesUpdate && canSeeSalary && (
             <div className="p-5 border-b border-border">
               <SalaryStructureEditor
                 employee={selectedEmp}

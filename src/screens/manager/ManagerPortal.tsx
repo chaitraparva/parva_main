@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { LeaveRequest, PayrollRecord, ExpenseClaim, AttendanceRecord, Employee } from '../../types'
+import type { LeaveRequest, ExpenseClaim, AttendanceRecord, Employee } from '../../types'
 import { ChevronDown, FileSpreadsheet, Paperclip } from 'lucide-react'
 import { downloadExcel } from '../../lib/excel'
 import { computeLeaveBalance, LEAVE_POLICY } from '../../lib/leaveBalance'
@@ -9,7 +9,7 @@ const navy = '#1C2B4A'
 const gold = '#C9A96E'
 
 const LEAVE_TYPES = ['Sick', 'Casual', 'Earned', 'Unpaid'] as const
-type Tab = 'team-leave' | 'my-leave' | 'team-attendance' | 'team-expenses' | 'payroll'
+type Tab = 'team-leave' | 'my-leave' | 'team-attendance' | 'team-expenses'
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -45,11 +45,9 @@ interface Props {
   employees: Employee[]
   attendance: AttendanceRecord[]
   onAttendanceRefresh: () => Promise<void>
-  payroll: PayrollRecord[]
-  onPayrollUpdate: (next: PayrollRecord[]) => Promise<void>
 }
 
-export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate, employeeId, employees, attendance: attendanceRecords, onAttendanceRefresh, payroll: payrollProp, onPayrollUpdate }: Props) {
+export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate, employeeId, employees, attendance: attendanceRecords, onAttendanceRefresh }: Props) {
   const [tab, setTab] = useState<Tab>('team-leave')
 
   // People who report directly to whoever is signed in.
@@ -173,54 +171,11 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
     )
   }
 
-  // Payroll
-  const [payroll, setPayrollLocal] = useState<PayrollRecord[]>(payrollProp)
-  useEffect(() => { setPayrollLocal(payrollProp) }, [payrollProp])
-  const [payrollError, setPayrollError] = useState('')
-  const setPayroll = (updater: PayrollRecord[] | ((prev: PayrollRecord[]) => PayrollRecord[])) => {
-    setPayrollError('')
-    setPayrollLocal(prev => {
-      const next = typeof updater === 'function' ? (updater as (prev: PayrollRecord[]) => PayrollRecord[])(prev) : updater
-      onPayrollUpdate(next).catch(err => {
-        setPayrollError(err instanceof Error ? err.message : 'Could not save that payroll change. Please try again.')
-      })
-      return next
-    })
-  }
-  const pendingPayroll = payroll.filter(r => r.status === 'pending-manager')
-
-  function approvePayroll(id: string) {
-    setPayroll(prev => prev.map(r => r.id === id ? { ...r, status: 'pending-hr' as const, managerApproved: true } : r))
-  }
-
-  // Reject with a remark: the record leaves the manager's queue and goes back
-  // to HR (who can see why, fix it and send it back for approval).
-  const [rejectingId, setRejectingId] = useState<string | null>(null)
-  const [rejectRemark, setRejectRemark] = useState('')
-  const [rejectError, setRejectError] = useState('')
-
-  function startReject(id: string) {
-    setRejectingId(id); setRejectRemark(''); setRejectError('')
-  }
-
-  function confirmReject() {
-    const remark = rejectRemark.trim()
-    if (!remark) { setRejectError('Please write a remark so HR knows what to fix.'); return }
-    const id = rejectingId
-    setPayroll(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' as const, managerApproved: false, rejectionRemark: remark } : r))
-    setRejectingId(null); setRejectRemark(''); setRejectError('')
-  }
-
-  function approveAllPayroll() {
-    setPayroll(prev => prev.map(r => r.status === 'pending-manager' ? { ...r, status: 'pending-hr' as const, managerApproved: true } : r))
-  }
-
   const tabs: { key: Tab; label: string }[] = [
     { key: 'team-leave', label: 'Team Leave Requests' },
     { key: 'my-leave', label: 'My Leave' },
     { key: 'team-attendance', label: 'Team Attendance' },
     { key: 'team-expenses', label: 'Team Expenses' },
-    { key: 'payroll', label: 'Payroll' },
   ]
 
   return (
@@ -577,126 +532,6 @@ export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpen
               )
             })}
           </div>
-        </div>
-      )}
-
-      {/* PAYROLL */}
-      {tab === 'payroll' && (
-        <div className="space-y-4">
-          {payrollError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
-              {payrollError}
-            </div>
-          )}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-base" style={{ color: navy }}>
-                Pending Payroll Approvals
-                {pendingPayroll.length > 0 && <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{pendingPayroll.length}</span>}
-              </h2>
-              {pendingPayroll.length > 0 && (
-                <button onClick={approveAllPayroll} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ background: gold, color: navy }}>
-                  Approve All
-                </button>
-              )}
-            </div>
-            {pendingPayroll.length === 0 ? (
-              <p className="text-sm text-muted-foreground">All payroll approved.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[520px]">
-                  <thead>
-                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                      <th className="pb-2 font-medium">Employee</th>
-                      <th className="pb-2 font-medium">Month</th>
-                      <th className="pb-2 font-medium">Base</th>
-                      <th className="pb-2 font-medium">Incentives</th>
-                      <th className="pb-2 font-medium">Deductions</th>
-                      <th className="pb-2 font-medium">Net Pay</th>
-                      <th className="pb-2 font-medium">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingPayroll.map(r => (
-                      <tr key={r.id} className="border-b border-border hover:bg-muted/20">
-                        <td className="py-2.5 font-medium">{r.employeeName}</td>
-                        <td className="py-2.5 text-muted-foreground">{r.month}</td>
-                        <td className="py-2.5">₹{r.baseSalary.toLocaleString('en-IN')}</td>
-                        <td className="py-2.5 text-emerald-700">+₹{r.incentives.toLocaleString('en-IN')}</td>
-                        <td className="py-2.5 text-red-600">-₹{r.deductions.toLocaleString('en-IN')}</td>
-                        <td className="py-2.5 font-bold" style={{ color: navy }}>₹{r.netPay.toLocaleString('en-IN')}</td>
-                        <td className="py-2.5">
-                          <div className="flex gap-2">
-                            <button onClick={() => approvePayroll(r.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: navy }}>
-                              Approve
-                            </button>
-                            <button onClick={() => startReject(r.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-red-200 text-red-600 bg-red-50 hover:bg-red-100">
-                              Reject
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {rejectingId && (() => {
-            const rec = payroll.find(r => r.id === rejectingId)
-            return (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setRejectingId(null)}>
-                <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5" onClick={e => e.stopPropagation()}>
-                  <h4 className="font-serif text-base font-semibold mb-1" style={{ color: navy }}>Reject payroll</h4>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    {rec ? `${rec.employeeName} · ${rec.month}` : ''} — HR will see your remark and can correct it.
-                  </p>
-                  <textarea
-                    value={rejectRemark}
-                    onChange={e => { setRejectRemark(e.target.value); setRejectError('') }}
-                    rows={4}
-                    autoFocus
-                    placeholder="Remark (required) — e.g. incentive amount is wrong"
-                    className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none"
-                  />
-                  {rejectError && <p className="text-xs font-medium mt-1" style={{ color: '#DC2626' }}>{rejectError}</p>}
-                  <div className="flex gap-2 mt-3">
-                    <button onClick={() => setRejectingId(null)} className="flex-1 py-2 rounded-lg text-sm font-medium border border-border">Cancel</button>
-                    <button onClick={confirmReject} className="flex-1 py-2 rounded-lg text-sm font-bold text-white" style={{ background: '#DC2626' }}>Reject</button>
-                  </div>
-                </div>
-              </div>
-            )
-          })()}
-
-          {payroll.filter(r => r.status !== 'pending-manager').length > 0 && (
-            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-              <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>All Payroll Records</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[520px]">
-                  <thead>
-                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                      <th className="pb-2 font-medium">Employee</th>
-                      <th className="pb-2 font-medium">Net Pay</th>
-                      <th className="pb-2 font-medium">Status</th>
-                      <th className="pb-2 font-medium">Remark</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payroll.filter(r => r.status !== 'pending-manager').map(r => (
-                      <tr key={r.id} className="border-b border-border hover:bg-muted/20">
-                        <td className="py-2.5">{r.employeeName}</td>
-                        <td className="py-2.5 font-medium">₹{r.netPay.toLocaleString('en-IN')}</td>
-                        <td className="py-2.5"><StatusBadge status={r.status} /></td>
-                        <td className="py-2.5 text-xs text-red-600">{r.status === 'rejected' ? r.rejectionRemark : ''}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

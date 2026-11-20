@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react'
 import type { Employee, JobTitle, PayrollRecord, AttendanceRecord, LeaveRequest } from '../types'
-import { Camera, IdCard, Mail, Phone, MapPin, Calendar, UserCog, Briefcase, Wallet, X } from 'lucide-react'
+import { Camera, IdCard, Mail, Phone, MapPin, Calendar, UserCog, Briefcase, Wallet, X, Download } from 'lucide-react'
 import DocumentsPanel from '../components/DocumentsPanel'
 import PayslipDocument from '../components/PayslipDocument'
 import { computePayslip } from '../lib/payslip'
+import { downloadPayslipsPdf } from '../lib/payslipPdf'
 import * as api from '../lib/api'
 
 const navy = '#1C2B4A'
@@ -45,7 +46,20 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
   const [error, setError] = useState('')
   const [openPayslip, setOpenPayslip] = useState<PayrollRecord | null>(null)
 
-  const myPayslips = payroll.filter(p => p.employeeId === employeeId)
+  // Only payslips HR has sent (status 'disbursed' = sent), newest cycle first.
+  const myPayslips = payroll
+    .filter(p => p.employeeId === employeeId && p.status === 'disbursed')
+    .sort((a, b) => (b.periodEnd || '').localeCompare(a.periodEnd || ''))
+  const [downloadError, setDownloadError] = useState('')
+  function downloadPayslip(p: PayrollRecord) {
+    if (!me) return
+    setDownloadError('')
+    try {
+      downloadPayslipsPdf(`Payslip_${p.month.replace(/\s+/g, '_')}_${me.name.replace(/\s+/g, '_')}.pdf`, [computePayslip(me, p, attendance, leaves)])
+    } catch {
+      setDownloadError('Could not prepare that payslip. Please try again.')
+    }
+  }
 
   if (!me) {
     return (
@@ -284,21 +298,29 @@ export default function Profile({ employeeId, employees, onEmployeesUpdate, payr
       <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5"><Wallet size={13} /> My Payslips</h3>
-          <p className="text-xs text-muted-foreground mt-1">Only you can see your payslip details here.</p>
+          <p className="text-xs text-muted-foreground mt-1">HR sends your payslip here every month. Only you and HR can see it.</p>
         </div>
+        {downloadError && <p className="text-xs font-medium text-red-600">{downloadError}</p>}
         {myPayslips.length === 0 ? (
           <p className="text-sm text-muted-foreground">No payslips on file yet.</p>
         ) : (
           <div className="space-y-2">
             {myPayslips.map(p => (
-              <button key={p.id} onClick={() => setOpenPayslip(p)}
-                className="w-full flex items-center justify-between p-3.5 rounded-lg border border-border hover:bg-muted/40 transition-colors text-left">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">{p.month}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 capitalize">{p.status.replace(/-/g, ' ')}</p>
-                </div>
-                <p className="text-sm font-bold" style={{ color: navy }}>₹{p.netPay.toLocaleString('en-IN')}</p>
-              </button>
+              <div key={p.id} className="flex items-center gap-2">
+                <button onClick={() => setOpenPayslip(p)}
+                  className="flex-1 flex items-center justify-between p-3.5 rounded-lg border border-border hover:bg-muted/40 transition-colors text-left">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{p.month}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Tap to view</p>
+                  </div>
+                  <p className="text-sm font-bold" style={{ color: navy }}>₹{p.netPay.toLocaleString('en-IN')}</p>
+                </button>
+                <button onClick={() => downloadPayslip(p)}
+                  className="flex items-center gap-1.5 px-3 py-3 rounded-lg border border-border text-xs font-semibold hover:bg-muted/40 transition-colors whitespace-nowrap"
+                  style={{ color: navy }} title="Download PDF">
+                  <Download size={14} /> PDF
+                </button>
+              </div>
             ))}
           </div>
         )}

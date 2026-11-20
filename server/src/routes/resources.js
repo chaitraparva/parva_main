@@ -1,4 +1,8 @@
+import { Router } from 'express'
 import { pool } from '../db.js'
+import { requireAuth } from '../auth.js'
+import { toCamel } from '../lib/case.js'
+import { asyncHandler } from '../lib/async-handler.js'
 import { crudRouter } from '../lib/crud.js'
 
 // Every operational module besides auth/employees, built on the generic
@@ -25,7 +29,14 @@ export const leaveRequestsRouter = crudRouter({
   updateRoles: ['manager', 'hr', 'management'],
 })
 
-export const payrollRecordsRouter = crudRouter({
+// Payroll is private. HR creates a payslip for an employee and it is sent
+// straight to them (status 'disbursed' = sent) -- there is no manager / admin /
+// finance approval any more.
+//   * HR writes (creates payslips); nobody else can create or change one.
+//   * HR and management (Directors) can read every record.
+//   * Everyone else can read ONLY their own payslips that HR has sent, so
+//     nobody's salary is visible to anybody else.
+const payrollCrud = crudRouter({
   table: 'payroll_records',
   allowedColumns: [
     'employeeId', 'month', 'baseSalary', 'incentives', 'deductions', 'netPay',
@@ -33,8 +44,28 @@ export const payrollRecordsRouter = crudRouter({
     'periodStart', 'periodEnd', 'reimbursements', 'bonus', 'otherDeductions',
     'rejectionRemark',
   ],
-  writeRoles: ['manager', 'hr', 'management', 'finance'],
+  writeRoles: ['hr'],
+  listLimit: 3000,
 })
+
+const PAYROLL_VIEW_ALL = ['hr', 'management']
+
+export const payrollRecordsRouter = Router()
+payrollRecordsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
+  const { rows } = PAYROLL_VIEW_ALL.includes(req.auth.loginRole)
+    ? await pool.query('SELECT * FROM payroll_records ORDER BY id DESC LIMIT 3000')
+    : await pool.query("SELECT * FROM payroll_records WHERE employee_id = $1 AND status = 'disbursed' ORDER BY id DESC", [req.auth.employeeId])
+  res.json({ payroll_records: rows.map(toCamel) })
+}))
+payrollRecordsRouter.get('/:id', requireAuth, asyncHandler(async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM payroll_records WHERE id = $1', [req.params.id])
+  const rec = rows[0]
+  const allowed = rec && (PAYROLL_VIEW_ALL.includes(req.auth.loginRole) || (rec.employee_id === req.auth.employeeId && rec.status === 'disbursed'))
+  if (!allowed) return res.status(404).json({ error: 'Not found.' })
+  res.json({ payroll_record: toCamel(rec) })
+}))
+// Everything else (POST / PATCH) -> HR only, via the generic router above.
+payrollRecordsRouter.use(payrollCrud)
 
 export const attendanceRouter = crudRouter({
   table: 'attendance_records',

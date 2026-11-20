@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { PayrollRecord, ExpenseClaim, Employee, LeaveRequest, AttendanceRecord } from '../../types'
+import type { ExpenseClaim, Employee, LeaveRequest, AttendanceRecord } from '../../types'
 import { DollarSign } from 'lucide-react'
 import { computeLeaveBalance, LEAVE_POLICY } from '../../lib/leaveBalance'
 import ClockCard from '../../components/ClockCard'
@@ -8,7 +8,7 @@ const navy = '#1C2B4A'
 const gold = '#C9A96E'
 
 const LEAVE_TYPES = ['Sick', 'Casual', 'Earned', 'Unpaid'] as const
-type Tab = 'overview' | 'payroll-signoff' | 'reimbursements' | 'my-leave' | 'my-attendance'
+type Tab = 'overview' | 'reimbursements' | 'my-leave' | 'my-attendance'
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -29,8 +29,6 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 interface Props {
-  payroll: PayrollRecord[]
-  onPayrollUpdate: (next: PayrollRecord[]) => Promise<void>
   expenses: ExpenseClaim[]
   onExpensesUpdate: (next: ExpenseClaim[]) => Promise<void>
   employees: Employee[]
@@ -42,7 +40,7 @@ interface Props {
   onAttendanceRefresh: () => Promise<void>
 }
 
-export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, expenses, onExpensesUpdate, employees, currentEmployee, leaves, onLeaveUpdate, employeeId, attendance: attendanceRecords, onAttendanceRefresh }: Props) {
+export default function FinancePortal({ expenses, onExpensesUpdate, employees, currentEmployee, leaves, onLeaveUpdate, employeeId, attendance: attendanceRecords, onAttendanceRefresh }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
 
   // My Leave — a finance employee's own leave request, same self-service
@@ -93,33 +91,6 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
     .filter(r => r.employeeId === employeeId)
     .sort((a, b) => b.date.localeCompare(a.date))
 
-  // Payroll sign-off — HR processes a record, then it lands here for
-  // Finance to give the final sign-off and mark it disbursed.
-  const [payroll, setPayrollLocal] = useState<PayrollRecord[]>(payrollProp)
-  useEffect(() => { setPayrollLocal(payrollProp) }, [payrollProp])
-  const [payrollError, setPayrollError] = useState('')
-  const setPayroll = (updater: PayrollRecord[] | ((prev: PayrollRecord[]) => PayrollRecord[])) => {
-    setPayrollError('')
-    setPayrollLocal(prev => {
-      const next = typeof updater === 'function' ? (updater as (prev: PayrollRecord[]) => PayrollRecord[])(prev) : updater
-      onPayrollUpdate(next).catch(err => {
-        setPayrollError(err instanceof Error ? err.message : 'Could not save that payroll change. Please try again.')
-      })
-      return next
-    })
-  }
-  const pendingPayroll = payroll.filter(r => r.status === 'pending-management')
-  const disbursedPayroll = payroll.filter(r => r.status === 'disbursed')
-  const totalDisbursement = disbursedPayroll.reduce((s, r) => s + r.netPay, 0)
-  const pendingTotal = pendingPayroll.reduce((s, r) => s + r.netPay, 0)
-
-  function signOff(id: string) {
-    setPayroll(prev => prev.map(r => r.id === id ? { ...r, status: 'disbursed' as const, adminApproved: true } : r))
-  }
-  function signOffAll() {
-    setPayroll(prev => prev.map(r => r.status === 'pending-management' ? { ...r, status: 'disbursed' as const, adminApproved: true } : r))
-  }
-
   // Reimbursements — HR approves a claim, then it lands here for Finance
   // to actually pay out and mark reimbursed.
   const awaitingReimbursement = expenses.filter(c => c.status === 'Approved')
@@ -139,7 +110,6 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
-    { key: 'payroll-signoff', label: 'Payroll Sign-off' },
     { key: 'reimbursements', label: 'Reimbursements' },
     { key: 'my-leave', label: 'My Leave' },
     { key: 'my-attendance', label: 'My Attendance' },
@@ -168,17 +138,7 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
       {/* OVERVIEW */}
       {tab === 'overview' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Pending Sign-off</p>
-              <p className="text-2xl font-bold font-serif" style={{ color: '#D97706' }}>₹{(pendingTotal / 100000).toFixed(2)}L</p>
-              <p className="text-xs text-muted-foreground mt-1">{pendingPayroll.length} record{pendingPayroll.length !== 1 ? 's' : ''}</p>
-            </div>
-            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Total Disbursed</p>
-              <p className="text-2xl font-bold font-serif" style={{ color: '#059669' }}>₹{(totalDisbursement / 100000).toFixed(2)}L</p>
-              <p className="text-xs text-muted-foreground mt-1">{disbursedPayroll.length} record{disbursedPayroll.length !== 1 ? 's' : ''}</p>
-            </div>
+          <div className="grid grid-cols-2 gap-4">
             <div className="bg-card rounded-xl border border-border shadow-sm p-5">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Awaiting Reimbursement</p>
               <p className="text-2xl font-bold font-serif" style={{ color: '#D97706' }}>
@@ -197,107 +157,10 @@ export default function FinancePortal({ payroll: payrollProp, onPayrollUpdate, e
 
           <div className="bg-card rounded-xl border border-border shadow-sm p-5">
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Every payroll record HR has processed lands here for final sign-off, and every expense claim HR has
-              approved lands here for payout. Use the tabs above to act on what's waiting.
+              Every expense claim HR has approved lands here for payout. Use the tabs above to act on what's waiting.
+              Payroll is handled by HR alone, so salaries are not shown on this portal.
             </p>
           </div>
-        </div>
-      )}
-
-      {/* PAYROLL SIGN-OFF */}
-      {tab === 'payroll-signoff' && (
-        <div className="space-y-4">
-          {payrollError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
-              {payrollError}
-            </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Pending Sign-off Total</p>
-              <p className="text-2xl font-bold font-serif" style={{ color: '#D97706' }}>₹{(pendingTotal / 100000).toFixed(2)}L</p>
-              <p className="text-xs text-muted-foreground mt-1">{pendingPayroll.length} record{pendingPayroll.length !== 1 ? 's' : ''}</p>
-            </div>
-            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Total Disbursed</p>
-              <p className="text-2xl font-bold font-serif" style={{ color: '#059669' }}>₹{(totalDisbursement / 100000).toFixed(2)}L</p>
-              <p className="text-xs text-muted-foreground mt-1">{disbursedPayroll.length} record{disbursedPayroll.length !== 1 ? 's' : ''}</p>
-            </div>
-          </div>
-
-          <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-base" style={{ color: navy }}>
-                Awaiting Sign-off
-                {pendingPayroll.length > 0 && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{pendingPayroll.length}</span>}
-              </h2>
-              {pendingPayroll.length > 0 && (
-                <button onClick={signOffAll} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ background: gold, color: navy }}>
-                  Sign Off All
-                </button>
-              )}
-            </div>
-            {pendingPayroll.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No payroll records awaiting sign-off.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[520px]">
-                  <thead>
-                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                      <th className="pb-2 font-medium">Employee</th>
-                      <th className="pb-2 font-medium">Role</th>
-                      <th className="pb-2 font-medium">Month</th>
-                      <th className="pb-2 font-medium">Net Pay</th>
-                      <th className="pb-2 font-medium">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingPayroll.map(r => (
-                      <tr key={r.id} className="border-b border-border hover:bg-muted/20">
-                        <td className="py-2.5 font-medium">{r.employeeName}</td>
-                        <td className="py-2.5 capitalize">{r.role}</td>
-                        <td className="py-2.5 text-muted-foreground">{r.month}</td>
-                        <td className="py-2.5 font-bold" style={{ color: navy }}>₹{r.netPay.toLocaleString('en-IN')}</td>
-                        <td className="py-2.5">
-                          <button onClick={() => signOff(r.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: navy }}>
-                            Sign Off
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {disbursedPayroll.length > 0 && (
-            <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-              <h2 className="font-semibold text-base mb-4" style={{ color: navy }}>Disbursed Records</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[520px]">
-                  <thead>
-                    <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                      <th className="pb-2 font-medium">Employee</th>
-                      <th className="pb-2 font-medium">Role</th>
-                      <th className="pb-2 font-medium">Net Pay</th>
-                      <th className="pb-2 font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {disbursedPayroll.map(r => (
-                      <tr key={r.id} className="border-b border-border hover:bg-muted/20">
-                        <td className="py-2.5">{r.employeeName}</td>
-                        <td className="py-2.5 capitalize">{r.role}</td>
-                        <td className="py-2.5 font-medium">₹{r.netPay.toLocaleString('en-IN')}</td>
-                        <td className="py-2.5"><StatusBadge status={r.status} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       )}
 

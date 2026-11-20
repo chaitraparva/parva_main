@@ -9,14 +9,15 @@ import PayslipDocument from '../../components/PayslipDocument'
 const navy = '#1C2B4A'
 const gold = '#C9A96E'
 
-type FilterTab = 'all' | 'rejected' | 'pending-hr' | 'pending-management' | 'disbursed'
+// 'sent' = payslip HR has sent to the employee; 'unsent' = older records that were never sent.
+type FilterTab = 'all' | 'sent' | 'unsent'
 
 const statusLabel: Record<string, string> = {
-  'pending-manager': 'Awaiting Manager',
-  'pending-hr': 'Pending HR',
-  'pending-management': 'Pending Admin',
-  'disbursed': 'Disbursed',
-  'rejected': 'Rejected by Manager',
+  'pending-manager': 'Not sent yet',
+  'pending-hr': 'Not sent yet',
+  'pending-management': 'Not sent yet',
+  'rejected': 'Not sent yet',
+  'disbursed': 'Sent to employee',
 }
 
 const statusColor: Record<string, { bg: string; text: string }> = {
@@ -64,7 +65,6 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
       return next
     })
   }
-  const [processing, setProcessing] = useState<Set<string>>(new Set())
   const [tab, setTab] = useState<FilterTab>('all')
   const [selected, setSelected] = useState<PayrollRecord | null>(null)
 
@@ -100,9 +100,11 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
       incentives: parseFloat(genIncentives) || 0,
       deductions: 0,
       netPay: 0,
-      status: 'pending-manager',
+      // Generating a payslip sends it straight to the employee — there is no
+      // manager / admin / finance approval any more.
+      status: 'disbursed',
       managerApproved: false,
-      hrProcessed: false,
+      hrProcessed: true,
       adminApproved: false,
       periodStart,
       periodEnd,
@@ -122,28 +124,17 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
     setSelected(finalRecord)
   }
 
-  const doProcess = (id: string) => {
-    setProcessing(prev => new Set([...prev, id]))
-    setTimeout(() => {
-      setRecords(prev => prev.map(r => r.id === id ? { ...r, hrProcessed: true, status: 'pending-management' } : r))
-      setProcessing(prev => { const n = new Set(prev); n.delete(id); return n })
-      setSelected(prev => prev?.id === id ? { ...prev, hrProcessed: true, status: 'pending-management' } : prev)
-    }, 800)
+  // Older records that were generated before payslips were sent straight away.
+  const sendToEmployee = (id: string) => {
+    setRecords(prev => prev.map(r => r.id === id ? { ...r, hrProcessed: true, status: 'disbursed' as const } : r))
+    setSelected(prev => prev?.id === id ? { ...prev, hrProcessed: true, status: 'disbursed' as const } : prev)
   }
 
-  // A record the Line Manager rejected: HR has looked at the remark / fixed it,
-  // now send it back to the manager for approval.
-  const resubmitToManager = (id: string) => {
-    setRecords(prev => prev.map(r => r.id === id ? { ...r, status: 'pending-manager' as const, managerApproved: false, rejectionRemark: '' } : r))
-    setSelected(prev => prev?.id === id ? null : prev)
+  const sendAll = () => {
+    records.filter(r => r.status !== 'disbursed').forEach(r => sendToEmployee(r.id))
   }
 
-  const processAll = () => {
-    const pendingIds = records.filter(r => r.status === 'pending-hr').map(r => r.id)
-    pendingIds.forEach(id => doProcess(id))
-  }
-
-  const filtered = tab === 'all' ? records : records.filter(r => r.status === tab)
+  const filtered = tab === 'all' ? records : tab === 'sent' ? records.filter(r => r.status === 'disbursed') : records.filter(r => r.status !== 'disbursed')
 
   const exportPaysheet = () => {
     downloadCsv(
@@ -164,7 +155,8 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
     downloadPayslipsPdf(`Payslips_${tab}_${new Date().toISOString().slice(0, 10)}.pdf`, payslips)
   }
 
-  const pendingHRCount = records.filter(r => r.status === 'pending-hr').length
+  const unsentCount = records.filter(r => r.status !== 'disbursed').length
+  const sentCount = records.length - unsentCount
   const totalPayout = records.reduce((s, r) => s + r.netPay, 0)
   const disbursedPayout = records.filter(r => r.status === 'disbursed').reduce((s, r) => s + r.netPay, 0)
 
@@ -173,11 +165,11 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="font-serif text-2xl font-semibold text-foreground">Payroll</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Stage 2 of 3 — HR processes verified records and forwards to Admin</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Generate a payslip and it is sent straight to the employee. Only HR can see everyone\'s payslips.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => { setGenError(''); setShowGenerate(true) }} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all" style={{ backgroundColor: navy }}>
-            <Plus size={14} /> Generate Payslip
+            <Plus size={14} /> Generate &amp; Send Payslip
           </button>
           <button onClick={exportPayslipsPdf} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-border bg-card hover:bg-muted transition-all">
             <Download size={14} /> Export Payslips (PDF)
@@ -199,7 +191,7 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowGenerate(false)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h4 className="font-serif text-base font-semibold text-foreground">Generate Payslip</h4>
+              <h4 className="font-serif text-base font-semibold text-foreground">Generate &amp; Send Payslip</h4>
               <button onClick={() => setShowGenerate(false)}><X size={16} className="text-muted-foreground hover:text-foreground transition-colors" /></button>
             </div>
             <div className="space-y-3">
@@ -240,69 +232,40 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
                 </div>
               </div>
               {genError && <p className="text-xs font-medium" style={{ color: '#DC2626' }}>{genError}</p>}
+              <p className="text-[11px] text-muted-foreground">The payslip goes straight to the employee and cannot be edited afterwards.</p>
               <button onClick={generatePayslip} className="w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all" style={{ backgroundColor: navy }}>
-                Generate
+                Generate &amp; Send
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Pipeline visual */}
-      <div className="bg-card rounded-xl border border-border shadow-sm px-8 py-5 overflow-x-auto">
-        <div className="flex items-center min-w-[420px]">
-          {PIPELINE.map((stage, i) => {
-            const count = records.filter(r => r.status === stage).length
-            const isCurrent = stage === 'pending-hr'
-            return (
-              <div key={stage} className="flex items-center flex-1">
-                <div className="flex flex-col items-center flex-1">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center mb-2 font-bold text-sm transition-all"
-                    style={{
-                      backgroundColor: i === 0 ? '#ECFDF5' : isCurrent ? navy : i < PIPELINE.indexOf('pending-management') ? '#ECFDF5' : '#F0EDE7',
-                      color: i === 0 ? '#059669' : isCurrent ? '#FAF8F5' : i < PIPELINE.indexOf('pending-management') ? '#059669' : '#9CA3AF',
-                      boxShadow: isCurrent ? `0 0 0 3px rgba(28,43,74,0.2)` : undefined,
-                    }}>
-                    {i === 0 ? <Check size={16} /> : i + 1}
-                  </div>
-                  <p className="text-xs font-semibold text-center" style={{ color: isCurrent ? navy : '#9CA3AF' }}>{PIPELINE_LABELS[i]}</p>
-                  {count > 0 && <span className="text-[10px] font-medium mt-0.5" style={{ color: isCurrent ? gold : '#9CA3AF' }}>{count} records</span>}
-                </div>
-                {i < PIPELINE.length - 1 && (
-                  <div className="h-0.5 w-12 shrink-0 -mt-6"
-                    style={{ backgroundColor: i < PIPELINE.indexOf('pending-hr') ? '#10B981' : '#E5DFD5' }} />
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* KPI row */}
+      {/* Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Pending HR Action', value: pendingHRCount, note: 'Records to process', color: '#D97706' },
-          { label: 'Total Org Payout', value: `₹${(totalPayout / 100000).toFixed(1)}L`, note: 'Gross, all cycles', color: navy },
-          { label: 'Disbursed', value: `₹${(disbursedPayout / 100000).toFixed(1)}L`, note: `${records.filter(r => r.status === 'disbursed').length} employees`, color: '#059669' },
-          { label: 'Avg Net Pay', value: `₹${(records.length ? Math.round(totalPayout / records.length) : 0).toLocaleString('en-IN')}`, note: 'Per employee', color: '#7C3AED' },
-        ].map(s => (
-          <div key={s.label} className="bg-card rounded-xl border border-border shadow-sm p-5">
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">{s.label}</p>
-            <p className="font-serif text-2xl font-semibold" style={{ color: s.color }}>{s.value}</p>
-            <p className="text-xs text-muted-foreground mt-1">{s.note}</p>
+          { label: 'Payslips Sent', value: sentCount, note: 'Delivered to employees', color: '#059669' },
+          { label: 'Not Sent Yet', value: unsentCount, note: 'Older records', color: '#D97706' },
+          { label: 'Total Net Pay Sent', value: `₹${(disbursedPayout / 100000).toFixed(1)}L`, note: 'All cycles', color: navy },
+          { label: 'Avg Net Pay', value: `₹${(records.length ? Math.round(totalPayout / records.length) : 0).toLocaleString('en-IN')}`, note: 'Per payslip', color: '#7C3AED' },
+        ].map(c => (
+          <div key={c.label} className="bg-card rounded-xl border border-border shadow-sm p-5">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">{c.label}</p>
+            <p className="font-serif text-2xl font-semibold" style={{ color: c.color }}>{c.value}</p>
+            <p className="text-xs text-muted-foreground mt-1">{c.note}</p>
           </div>
         ))}
       </div>
 
-      {pendingHRCount > 0 && (
+      {unsentCount > 0 && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-xl border"
           style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
           <AlertCircle size={15} className="text-amber-500 shrink-0" />
-          <p className="text-sm text-amber-800 flex-1"><strong>{pendingHRCount} payroll record{pendingHRCount > 1 ? 's' : ''}</strong> require HR processing before Admin can sign off.</p>
-          <button onClick={processAll}
+          <p className="text-sm text-amber-800 flex-1"><strong>{unsentCount} older payslip{unsentCount > 1 ? 's' : ''}</strong> {unsentCount > 1 ? 'were' : 'was'} generated before and {unsentCount > 1 ? 'have' : 'has'} not been sent to the employee.</p>
+          <button onClick={sendAll}
             className="px-4 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-90 whitespace-nowrap"
             style={{ backgroundColor: navy, color: '#FAF8F5' }}>
-            Process All ({pendingHRCount})
+            Send All ({unsentCount})
           </button>
         </div>
       )}
@@ -312,13 +275,13 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
         <div className="flex-1 min-w-0 bg-card rounded-xl border border-border shadow-sm overflow-hidden">
           {/* Filter tabs */}
           <div className="border-b border-border px-4 flex flex-wrap gap-0">
-            {(['all', 'rejected', 'pending-hr', 'pending-management', 'disbursed'] as FilterTab[]).map(t => (
+            {(['all', 'sent', 'unsent'] as FilterTab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className="py-3.5 px-4 text-xs font-medium border-b-2 -mb-px transition-colors"
                 style={{ borderColor: tab === t ? gold : 'transparent', color: tab === t ? navy : '#7A7065' }}>
-                {t === 'all' ? 'All Records' : statusLabel[t]}
+                {t === 'all' ? 'All Payslips' : t === 'sent' ? 'Sent' : 'Not sent yet'}
                 <span className="ml-1.5 text-[10px] font-bold opacity-60">
-                  ({t === 'all' ? records.length : records.filter(r => r.status === t).length})
+                  ({t === 'all' ? records.length : t === 'sent' ? sentCount : unsentCount})
                 </span>
               </button>
             ))}
@@ -336,7 +299,6 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
               <tbody>
                 {filtered.map(rec => {
                   const sc = statusColor[rec.status]
-                  const isProc = processing.has(rec.id)
                   return (
                     <tr key={rec.id}
                       className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors cursor-pointer"
@@ -364,22 +326,13 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
                           style={{ backgroundColor: sc.bg, color: sc.text }}>
                           {statusLabel[rec.status]}
                         </span>
-                        {rec.status === 'rejected' && rec.rejectionRemark && (
-                          <p className="text-[11px] mt-1 max-w-[220px]" style={{ color: '#DC2626' }}>Remark: {rec.rejectionRemark}</p>
-                        )}
                       </td>
                       <td className="px-5 py-4" onClick={e => e.stopPropagation()}>
-                        {rec.status === 'pending-hr' ? (
-                          <button onClick={() => doProcess(rec.id)} disabled={isProc}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-90 disabled:opacity-60"
+                        {rec.status !== 'disbursed' ? (
+                          <button onClick={() => sendToEmployee(rec.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all hover:opacity-90"
                             style={{ backgroundColor: gold, color: navy }}>
-                            <CreditCard size={12} />
-                            {isProc ? 'Processing…' : 'Process'}
-                          </button>
-                        ) : rec.status === 'rejected' ? (
-                          <button onClick={() => resubmitToManager(rec.id)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap border border-border bg-card hover:bg-muted">
-                            Send back to Manager
+                            <CreditCard size={12} /> Send to employee
                           </button>
                         ) : (
                           <button className="p-1 text-muted-foreground hover:text-foreground transition-colors"
@@ -416,21 +369,11 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
                     Could not find this employee's record.
                   </div>
                 )}
-                {selected.status === 'rejected' && (
-                  <div className="rounded-xl border px-4 py-3 text-sm" style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>
-                    <p className="font-semibold mb-0.5">Rejected by the Line Manager</p>
-                    <p>{selected.rejectionRemark || 'No remark was written.'}</p>
-                    <button onClick={() => resubmitToManager(selected.id)}
-                      className="mt-3 w-full py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: navy }}>
-                      Send back to Manager
-                    </button>
-                  </div>
-                )}
-                {selected.status === 'pending-hr' && (
-                  <button onClick={() => { doProcess(selected.id); setSelected(null) }}
+                {selected.status !== 'disbursed' && (
+                  <button onClick={() => sendToEmployee(selected.id)}
                     className="w-full py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90"
                     style={{ backgroundColor: gold, color: navy }}>
-                    Process This Payslip
+                    Send to employee
                   </button>
                 )}
               </div>
