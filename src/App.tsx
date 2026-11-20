@@ -82,7 +82,15 @@ const PAYROLL_FIELDS = [
 
 function payrollFieldsOf(r: PayrollRecord): Omit<api.RawPayrollRecord, 'id'> {
   const out: Record<string, unknown> = {}
-  for (const f of PAYROLL_FIELDS) out[f] = (r as unknown as Record<string, unknown>)[f] ?? null
+  for (const f of PAYROLL_FIELDS) {
+    const v = (r as unknown as Record<string, unknown>)[f]
+    // rejectionRemark (sql/19) is sent only when the record actually has one
+    // (including '' to clear it). A brand-new payslip has none, and a null
+    // would break the NOT NULL column — or fail outright if the migration
+    // hasn't been run yet — so it is simply left out.
+    if (f === 'rejectionRemark' && (v === undefined || v === null)) continue
+    out[f] = v ?? null
+  }
   return out as Omit<api.RawPayrollRecord, 'id'>
 }
 
@@ -1095,7 +1103,8 @@ export default function App() {
       reimbursements: r.reimbursements != null ? Number(r.reimbursements) : undefined,
       bonus: r.bonus != null ? Number(r.bonus) : undefined,
       otherDeductions: r.otherDeductions != null ? Number(r.otherDeductions) : undefined,
-      rejectionRemark: r.rejectionRemark || '',
+      // undefined (not '') when the server has no such column yet, so it is never sent back
+      rejectionRemark: r.rejectionRemark ?? undefined,
     }
   })
 
