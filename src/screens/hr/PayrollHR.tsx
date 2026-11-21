@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { PayrollRecord, Employee, AttendanceRecord, LeaveRequest } from '../../types'
-import { CreditCard, Check, X, ChevronRight, Download, AlertCircle, Plus } from 'lucide-react'
+import { CreditCard, Check, X, ChevronRight, Download, AlertCircle, Plus, Pencil, Trash2 } from 'lucide-react'
 import { downloadCsv } from '../../lib/csv'
 import { computePayslip, cycleForPayMonth } from '../../lib/payslip'
 import { downloadPayslipsPdf } from '../../lib/payslipPdf'
@@ -39,6 +39,7 @@ interface PayrollHRProps {
   role?: string
   payroll: PayrollRecord[]
   onPayrollUpdate: (next: PayrollRecord[]) => Promise<void>
+  onPayrollDelete: (id: string) => Promise<void>
   employees: Employee[]
   attendance: AttendanceRecord[]
   leaves: LeaveRequest[]
@@ -48,7 +49,7 @@ function currentPayMonthInput() {
   return new Date().toISOString().slice(0, 7)
 }
 
-export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, attendance, leaves }: PayrollHRProps) {
+export default function PayrollHR({ role, payroll, onPayrollUpdate, onPayrollDelete, employees, attendance, leaves }: PayrollHRProps) {
   const [records, setRecordsLocal] = useState<PayrollRecord[]>(payroll.filter(r => !PAYROLL_EXCLUDED_IDS.includes(r.employeeId)))
   useEffect(() => { setRecordsLocal(payroll.filter(r => !PAYROLL_EXCLUDED_IDS.includes(r.employeeId))) }, [payroll])
   const [saveError, setSaveError] = useState('')
@@ -124,6 +125,56 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
     setSelected(finalRecord)
   }
 
+  // ───────── Edit / delete a payslip ─────────
+  // Basic salary and this cycle's extras can be changed; deductions and net pay
+  // are recomputed the same way as when the payslip was generated. The
+  // employee, month and attendance can't be edited here — to change those,
+  // delete the payslip and generate it again.
+  const [editing, setEditing] = useState<PayrollRecord | null>(null)
+  const [editBase, setEditBase] = useState('0')
+  const [editReimbursements, setEditReimbursements] = useState('0')
+  const [editIncentives, setEditIncentives] = useState('0')
+  const [editBonus, setEditBonus] = useState('0')
+  const [editOtherDeductions, setEditOtherDeductions] = useState('0')
+  const [editError, setEditError] = useState('')
+
+  function startEdit(rec: PayrollRecord) {
+    setEditing(rec)
+    setEditBase(String(rec.baseSalary || 0))
+    setEditReimbursements(String(rec.reimbursements || 0))
+    setEditIncentives(String(rec.incentives || 0))
+    setEditBonus(String(rec.bonus || 0))
+    setEditOtherDeductions(String(rec.otherDeductions || 0))
+    setEditError('')
+  }
+
+  function saveEdit() {
+    if (!editing) return
+    const employee = employees.find(e => e.id === editing.employeeId)
+    if (!employee) { setEditError('Could not find this employee.'); return }
+    const nums = [editBase, editReimbursements, editIncentives, editBonus, editOtherDeductions].map(v => parseFloat(v))
+    if (nums.some(n => Number.isNaN(n) || n < 0)) { setEditError('Please enter valid amounts (0 or more).'); return }
+    const [baseSalary, reimbursements, incentives, bonus, otherDeductions] = nums
+    const updated: PayrollRecord = { ...editing, baseSalary, reimbursements, incentives, bonus, otherDeductions }
+    const computed = computePayslip(employee, updated, attendance, leaves)
+    const finalRecord: PayrollRecord = { ...updated, deductions: computed.deductions.totalDeductions, netPay: computed.netSalaryPayable }
+    setRecords(prev => prev.map(r => r.id === finalRecord.id ? finalRecord : r))
+    setSelected(prev => prev?.id === finalRecord.id ? finalRecord : prev)
+    setEditing(null)
+  }
+
+  async function deletePayslip(rec: PayrollRecord) {
+    const sent = rec.status === 'disbursed'
+    if (!window.confirm(`Delete ${rec.employeeName}'s payslip for ${rec.month}?${sent ? ' It has already been sent, so the employee will no longer see it.' : ''} This cannot be undone.`)) return
+    setSaveError('')
+    try {
+      await onPayrollDelete(rec.id)
+      setSelected(prev => prev?.id === rec.id ? null : prev)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not delete that payslip. Please try again.')
+    }
+  }
+
   // Older records that were generated before payslips were sent straight away.
   const sendToEmployee = (id: string) => {
     setRecords(prev => prev.map(r => r.id === id ? { ...r, hrProcessed: true, status: 'disbursed' as const } : r))
@@ -183,6 +234,39 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
       {saveError && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
           {saveError}
+        </div>
+      )}
+
+      {/* Edit Payslip */}
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setEditing(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h4 className="font-serif text-base font-semibold text-foreground">Edit Payslip</h4>
+              <button onClick={() => setEditing(null)}><X size={16} className="text-muted-foreground hover:text-foreground transition-colors" /></button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">{editing.employeeName} · {editing.month}</p>
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                ['Basic Salary', editBase, setEditBase],
+                ['Reimbursements', editReimbursements, setEditReimbursements],
+                ['Incentives', editIncentives, setEditIncentives],
+                ['Bonus', editBonus, setEditBonus],
+                ['Other Deductions', editOtherDeductions, setEditOtherDeductions],
+              ] as [string, string, (v: string) => void][]).map(([label, value, set]) => (
+                <div key={label}>
+                  <label className="block text-xs text-muted-foreground mb-1">{label}</label>
+                  <input type="number" min="0" value={value} onChange={e => set(e.target.value)}
+                    className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none" />
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-3">Deductions and net pay are worked out again when you save. To change the employee or month, delete this payslip and generate a new one.{editing.status === 'disbursed' ? ' The employee will see the updated payslip.' : ''}</p>
+            {editError && <p className="text-xs font-medium mt-2" style={{ color: '#DC2626' }}>{editError}</p>}
+            <button onClick={saveEdit} className="w-full mt-3 py-2.5 rounded-xl text-sm font-bold text-white transition-all" style={{ backgroundColor: navy }}>
+              Save changes
+            </button>
+          </div>
         </div>
       )}
 
@@ -327,7 +411,7 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
                           {statusLabel[rec.status]}
                         </span>
                       </td>
-                      <td className="px-5 py-4" onClick={e => e.stopPropagation()}>
+                      <td className="px-5 py-4 whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         {rec.status !== 'disbursed' ? (
                           <button onClick={() => sendToEmployee(rec.id)}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all hover:opacity-90"
@@ -340,6 +424,12 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
                             <ChevronRight size={16} />
                           </button>
                         )}
+                        <button onClick={() => startEdit(rec)} className="ml-1 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted" aria-label="Edit payslip" title="Edit">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => deletePayslip(rec)} className="p-1.5 rounded-md text-muted-foreground hover:text-red-600 hover:bg-red-50" aria-label="Delete payslip" title="Delete">
+                          <Trash2 size={14} />
+                        </button>
                       </td>
                     </tr>
                   )
@@ -369,6 +459,16 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, employees, a
                     Could not find this employee's record.
                   </div>
                 )}
+                <div className="flex gap-2">
+                  <button onClick={() => startEdit(selected)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-semibold border border-border bg-card hover:bg-muted">
+                    <Pencil size={14} /> Edit
+                  </button>
+                  <button onClick={() => deletePayslip(selected)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-semibold border border-red-200 text-red-600 bg-red-50 hover:bg-red-100">
+                    <Trash2 size={14} /> Delete
+                  </button>
+                </div>
                 {selected.status !== 'disbursed' && (
                   <button onClick={() => sendToEmployee(selected.id)}
                     className="w-full py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90"

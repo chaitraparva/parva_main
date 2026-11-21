@@ -282,6 +282,10 @@ export async function updatePayrollRecord(id: string, patch: Partial<Omit<RawPay
   return data.payroll_record
 }
 
+export async function deletePayrollRecord(id: string): Promise<void> {
+  await request<null>(`/api/payroll-records/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
 // ─────────────────────── Attendance records ───────────────────────
 // Same pattern again — attendance_records only stores employee_id, not the
 // employee's name; App.tsx fills that in from the employee directory. The

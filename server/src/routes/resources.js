@@ -32,7 +32,7 @@ export const leaveRequestsRouter = crudRouter({
 // Payroll is private. HR creates a payslip for an employee and it is sent
 // straight to them (status 'disbursed' = sent) -- there is no manager / admin /
 // finance approval any more.
-//   * HR writes (creates payslips); nobody else can create or change one.
+//   * HR creates, edits and deletes payslips; nobody else can.
 //   * HR and management (Directors) can read every record.
 //   * Everyone else can read ONLY their own payslips that HR has sent, so
 //     nobody's salary is visible to anybody else.
@@ -45,6 +45,7 @@ const payrollCrud = crudRouter({
     'rejectionRemark',
   ],
   writeRoles: ['hr'],
+  deleteRoles: ['hr'],
   listLimit: 3000,
 })
 

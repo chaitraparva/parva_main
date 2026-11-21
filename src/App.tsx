@@ -422,6 +422,11 @@ export default function App() {
       }
     }
   }
+  // HR deletes a payslip. Rejects on failure so the screen can say why.
+  const onPayrollDelete = async (id: string) => {
+    await api.deletePayrollRecord(id)
+    setRawPayroll(await api.fetchPayrollRecords())
+  }
   // Same generic diff-and-sync approach as onPayrollUpdate, EXCEPT this one
   // is async and re-throws its error instead of only console.error-ing it.
   // It used to swallow the error silently like onPayrollUpdate still does —
@@ -1357,7 +1362,7 @@ export default function App() {
       case 'leave':
         return <Leave role={role} employees={employees} {...sharedLeaveProps} />
       case 'payroll-hr':
-        return <PayrollHR role={role} payroll={payroll} onPayrollUpdate={onPayrollUpdate} employees={employees} attendance={attendance} leaves={leaves} />
+        return <PayrollHR role={role} payroll={payroll} onPayrollUpdate={onPayrollUpdate} onPayrollDelete={onPayrollDelete} employees={employees} attendance={attendance} leaves={leaves} />
       case 'expense-approvals':
         return <ExpenseApprovals {...sharedExpenseProps} employees={employees} currentEmployee={currentEmployee} />
       case 'expense-hr':
