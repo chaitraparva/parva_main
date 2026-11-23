@@ -50,8 +50,26 @@ interface Props {
 export default function ManagerPortal({ leaves, onLeaveUpdate, expenses, onExpensesUpdate, employeeId, employees, attendance: attendanceRecords, onAttendanceRefresh }: Props) {
   const [tab, setTab] = useState<Tab>('team-leave')
 
-  // People who report directly to whoever is signed in.
-  const teamIds = employees.filter(e => e.managerId === employeeId).map(e => e.id)
+  // Everyone below whoever is signed in: direct reports AND the people who
+  // report to them (e.g. Selva sees Adithi/Suhas, who report to Arun, and
+  // Nazish, who reports to Vishwas). A team lead who has no manager login
+  // can't approve anything, so the branch head receives those requests.
+  const teamIds: string[] = []
+  {
+    const seen = new Set<string>([employeeId])
+    let frontier = [employeeId]
+    while (frontier.length > 0) {
+      const next: string[] = []
+      for (const e of employees) {
+        if (e.managerId && frontier.includes(e.managerId) && !seen.has(e.id)) {
+          seen.add(e.id)
+          teamIds.push(e.id)
+          next.push(e.id)
+        }
+      }
+      frontier = next
+    }
+  }
 
   // Team leave — a CRM employee's leave request lands with their manager
   // first (see MyPortal.tsx submitLeave). The manager's decision here is
