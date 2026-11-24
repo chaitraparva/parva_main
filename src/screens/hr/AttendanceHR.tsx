@@ -128,8 +128,11 @@ export default function AttendanceHR({ employees, attendance, leaves, holidays =
     if (!checkIn || !checkOut) return '—'
     const [ih, im] = checkIn.split(':').map(Number)
     const [oh, om] = checkOut.split(':').map(Number)
-    const h = ((oh * 60 + om) - (ih * 60 + im)) / 60
-    return `${h.toFixed(1)} hrs`
+    let mins = (oh * 60 + om) - (ih * 60 + im)
+    // Night shift: logging out at 1:00 AM after logging in at 4:00 PM means the
+    // logout was the next day, so add 24 hours instead of showing a negative number.
+    if (mins < 0) mins += 24 * 60
+    return `${(mins / 60).toFixed(1)} hrs`
   }
 
   // Heatmap: the current calendar month, computed live from real attendance

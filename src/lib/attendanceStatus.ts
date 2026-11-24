@@ -34,7 +34,10 @@ export function buildDayRows(
 
     if (loggedIn && rec) {
       const status: DayStatus = rec.status === 'half-day' ? 'half-day' : rec.workMode === 'wfh' ? 'wfh' : 'present'
-      return { employee, status, checkIn: rec.checkIn, checkOut: rec.checkOut, note: rec.workMode === 'wfh' ? 'Work from home' : '' }
+      // A login from 2:00 PM (or a logout earlier than the login, i.e. after midnight) is a night shift.
+      const night = (rec.checkIn >= '14:00') || (!!rec.checkOut && rec.checkOut < rec.checkIn)
+      const note = [rec.workMode === 'wfh' ? 'Work from home' : '', night ? 'Night shift' : ''].filter(Boolean).join(' · ')
+      return { employee, status, checkIn: rec.checkIn, checkOut: rec.checkOut, note }
     }
     // HR marked this day as a Holiday or a Week-off for this person.
     if (rec && (rec.status === 'holiday' || rec.status === 'week-off')) {

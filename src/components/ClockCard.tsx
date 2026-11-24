@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { LogIn, LogOut, Home, Clock } from 'lucide-react'
 import type { AttendanceRecord, Employee } from '../types'
 import * as api from '../lib/api'
-import { HALF_DAY_BEFORE_HOUR, LOGIN_CLOSES_HOUR, formatClock, nowInZone, timeZoneForLocation, zoneLabel } from '../lib/clock'
+import { HALF_DAY_BEFORE_HOUR, NIGHT_SHIFT_FROM_HOUR, formatClock, minutesOf, nowInZone, previousDay, timeZoneForLocation, zoneLabel } from '../lib/clock'
 
 const navy = '#1C2B4A'
 
@@ -35,6 +35,17 @@ export default function ClockCard({ employeeId, employees, attendance, onRefresh
   const today = attendance.find(r => r.employeeId === employeeId && r.date === now.date)
   const loggedIn = !!today && !!today.checkIn && today.status !== 'absent'
   const loggedOut = loggedIn && !!today!.checkOut
+
+  // Night shift: logged in yesterday evening and not logged out yet (and it is
+  // still the same shift) -- the logout after midnight belongs to that record.
+  const nowMinutes = minutesOf(now.time)
+  const yesterdayRec = attendance.find(r => r.employeeId === employeeId && r.date === previousDay(now.date))
+  const openNight = !loggedIn && !!yesterdayRec && !!yesterdayRec.checkIn && !yesterdayRec.checkOut
+    && yesterdayRec.status !== 'absent'
+    && minutesOf(yesterdayRec.checkIn) >= NIGHT_SHIFT_FROM_HOUR * 60
+    && 24 * 60 + nowMinutes - minutesOf(yesterdayRec.checkIn) <= 18 * 60
+  // Day shift only: an early logout turns the day into a Half Day.
+  const dayShiftToday = loggedIn && minutesOf(today!.checkIn) < NIGHT_SHIFT_FROM_HOUR * 60
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true)
@@ -73,13 +84,7 @@ export default function ClockCard({ employeeId, employees, attendance, onRefresh
       )}
 
       <div className="mt-4">
-        {!loggedIn && now.hour >= LOGIN_CLOSES_HOUR && (
-          <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-            Login closed at {LOGIN_CLOSES_HOUR - 12}:00 PM today, so today is marked Absent. If you did work today, please ask HR to mark your attendance.
-          </div>
-        )}
-
-        {!loggedIn && now.hour < LOGIN_CLOSES_HOUR && (
+        {!loggedIn && !openNight && (
           <div className="flex flex-wrap gap-3">
             <button onClick={() => run(() => api.clockIn('office'))} disabled={busy}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
@@ -94,6 +99,19 @@ export default function ClockCard({ employeeId, employees, attendance, onRefresh
           </div>
         )}
 
+        {openNight && yesterdayRec && (
+          <div className="space-y-3">
+            <p className="text-sm text-foreground">
+              Night shift: logged in yesterday at <span className="font-semibold">{formatClock(yesterdayRec.checkIn)}</span>
+            </p>
+            <button onClick={() => run(() => api.clockOut())} disabled={busy}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
+              style={{ background: '#B45309' }}>
+              <LogOut size={16} /> {busy ? 'Please wait…' : 'Log Out'}
+            </button>
+          </div>
+        )}
+
         {loggedIn && !loggedOut && (
           <div className="space-y-3">
             <p className="text-sm text-foreground">
@@ -101,7 +119,7 @@ export default function ClockCard({ employeeId, employees, attendance, onRefresh
             </p>
             {!confirmEarly ? (
               <button
-                onClick={() => (now.hour < HALF_DAY_BEFORE_HOUR ? setConfirmEarly(true) : run(() => api.clockOut()))}
+                onClick={() => (dayShiftToday && now.hour < HALF_DAY_BEFORE_HOUR ? setConfirmEarly(true) : run(() => api.clockOut()))}
                 disabled={busy}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
                 style={{ background: '#B45309' }}>

@@ -501,7 +501,8 @@ export default function MyPortal({ leaves, onLeaveUpdate, expenses, onExpensesUp
                     if (r.checkIn && r.checkOut) {
                       const [ih, im] = r.checkIn.split(':').map(Number)
                       const [oh, om] = r.checkOut.split(':').map(Number)
-                      const diff = (oh * 60 + om) - (ih * 60 + im)
+                      let diff = (oh * 60 + om) - (ih * 60 + im)
+                      if (diff < 0) diff += 24 * 60 // night shift: logout was after midnight
                       hours = `${Math.floor(diff / 60)}h ${diff % 60}m`
                     }
                     return (

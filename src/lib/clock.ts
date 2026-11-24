@@ -5,7 +5,19 @@
 // step with the server's timeZoneForLocation().
 
 export const HALF_DAY_BEFORE_HOUR = 15 // logging out before 3:00 PM local = Half Day
-export const LOGIN_CLOSES_HOUR = 14 // Log In / Work From Home disappear from 2:00 PM local
+export const NIGHT_SHIFT_FROM_HOUR = 14 // a login from 2:00 PM local is a night shift (logout can be after midnight)
+
+/** "16:00" -> minutes since midnight */
+export function minutesOf(hhmm: string): number {
+  return Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
+}
+
+/** The calendar day before `date` (YYYY-MM-DD). */
+export function previousDay(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
 
 export type OfficeZone = 'Asia/Dubai' | 'Asia/Kolkata'
 
