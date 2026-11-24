@@ -15,7 +15,7 @@ export const leaveRequestsRouter = crudRouter({
   table: 'leave_requests',
   allowedColumns: [
     'employeeId', 'type', 'startDate', 'endDate', 'days', 'halfDay', 'reason',
-    'status', 'submittedByRole', 'pendingWith', 'decidedBy', 'decidedAt',
+    'status', 'submittedByRole', 'pendingWith', 'decidedBy', 'decidedAt', 'lopDecision',
   ],
   // Anyone can submit their own leave request (POST). PATCH (moving a
   // request forward/approved/rejected) is restricted to the three roles

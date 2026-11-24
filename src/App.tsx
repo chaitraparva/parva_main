@@ -294,7 +294,7 @@ export default function App() {
     const created = next.filter(l => !prevById.has(l.id))
     const updated = next.filter(l => {
       const prev = prevById.get(l.id)
-      return prev && (prev.status !== l.status || prev.pendingWith !== l.pendingWith)
+      return prev && (prev.status !== l.status || prev.pendingWith !== l.pendingWith || (prev.lopDecision ?? null) !== (l.lopDecision ?? null))
     })
 
     setRawLeaves(next.map(l => ({
@@ -310,6 +310,7 @@ export default function App() {
       submittedByRole: l.submittedByRole,
       pendingWith: l.pendingWith,
       appliedOn: l.appliedOn,
+      lopDecision: l.lopDecision,
     })))
 
     try {
@@ -327,12 +328,20 @@ export default function App() {
         })
       }
       for (const l of updated) {
-        await api.updateLeaveRequest(l.id, {
-          status: l.status,
-          pendingWith: l.pendingWith,
-          decidedBy: currentEmployeeId || undefined,
-          decidedAt: new Date().toISOString(),
-        })
+        const prev = prevById.get(l.id)
+        const decisionChanged = !prev || prev.status !== l.status || prev.pendingWith !== l.pendingWith
+        const patch: Parameters<typeof api.updateLeaveRequest>[1] = {}
+        // Only stamp who/when when the approve/reject itself changed — setting an LOP
+        // choice on an earlier rejection must not overwrite who rejected it.
+        if (decisionChanged) {
+          patch.status = l.status
+          patch.pendingWith = l.pendingWith
+          patch.decidedBy = currentEmployeeId || undefined
+          patch.decidedAt = new Date().toISOString()
+        }
+        // Only sent when set, so this keeps working before sql/26 has been run.
+        if (l.lopDecision) patch.lopDecision = l.lopDecision
+        await api.updateLeaveRequest(l.id, patch)
       }
     } catch (err) {
       console.error('Failed to save a leave request change to the server', err)
@@ -1362,7 +1371,7 @@ export default function App() {
       case 'leave':
         return <Leave role={role} employees={employees} {...sharedLeaveProps} />
       case 'payroll-hr':
-        return <PayrollHR role={role} payroll={payroll} onPayrollUpdate={onPayrollUpdate} onPayrollDelete={onPayrollDelete} employees={employees} attendance={attendance} leaves={leaves} />
+        return <PayrollHR role={role} payroll={payroll} onPayrollUpdate={onPayrollUpdate} onPayrollDelete={onPayrollDelete} employees={employees} attendance={attendance} leaves={leaves} onLeaveUpdate={onLeaveUpdate} />
       case 'expense-approvals':
         return <ExpenseApprovals {...sharedExpenseProps} employees={employees} currentEmployee={currentEmployee} />
       case 'expense-hr':

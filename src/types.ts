@@ -103,6 +103,9 @@ export interface LeaveRequest {
   pendingWith: Role | 'done'  // which role tier needs to act ('done' = resolved)
   decidedBy?: string | null    // employeeId of whoever last approved/rejected this
   decidedAt?: string | null
+  // Set when a leave is rejected: 'lop' = those days are loss of pay (deducted in the
+  // payslip), 'no-lop' = just rejected, nothing deducted. null/undefined = not decided.
+  lopDecision?: 'lop' | 'no-lop' | null
 }
 
 export interface Flag {

@@ -238,7 +238,7 @@ export async function createLeaveRequest(input: NewLeaveRequestInput): Promise<R
 
 export async function updateLeaveRequest(
   id: string,
-  patch: Partial<Pick<RawLeaveRequest, 'status' | 'pendingWith' | 'decidedBy' | 'decidedAt'>>,
+  patch: Partial<Pick<RawLeaveRequest, 'status' | 'pendingWith' | 'decidedBy' | 'decidedAt' | 'lopDecision'>>,
 ): Promise<RawLeaveRequest> {
   const data = await request<{ leave_request: RawLeaveRequest }>(`/api/leave-requests/${encodeURIComponent(id)}`, {
     method: 'PATCH',

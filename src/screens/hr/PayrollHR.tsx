@@ -43,13 +43,14 @@ interface PayrollHRProps {
   employees: Employee[]
   attendance: AttendanceRecord[]
   leaves: LeaveRequest[]
+  onLeaveUpdate: (next: LeaveRequest[]) => Promise<void>
 }
 
 function currentPayMonthInput() {
   return new Date().toISOString().slice(0, 7)
 }
 
-export default function PayrollHR({ role, payroll, onPayrollUpdate, onPayrollDelete, employees, attendance, leaves }: PayrollHRProps) {
+export default function PayrollHR({ role, payroll, onPayrollUpdate, onPayrollDelete, employees, attendance, leaves, onLeaveUpdate }: PayrollHRProps) {
   const [records, setRecordsLocal] = useState<PayrollRecord[]>(payroll.filter(r => !PAYROLL_EXCLUDED_IDS.includes(r.employeeId)))
   useEffect(() => { setRecordsLocal(payroll.filter(r => !PAYROLL_EXCLUDED_IDS.includes(r.employeeId))) }, [payroll])
   const [saveError, setSaveError] = useState('')
@@ -82,6 +83,31 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, onPayrollDel
   const [genError, setGenError] = useState('')
 
   const payableEmployees = employees.filter(e => e.status !== 'inactive' && !PAYROLL_EXCLUDED_IDS.includes(e.id))
+
+  // ───────── Leave to settle before payslips ─────────
+  // Leave that a manager hasn't decided by payslip time shows up here so HR can
+  // approve or reject it. Rejecting never deducts pay by itself: HR chooses
+  // "Reject only" (nothing deducted) or "Reject & LOP" (the days are deducted).
+  const [showLeaves, setShowLeaves] = useState(false)
+  const [leaveBusy, setLeaveBusy] = useState(false)
+  const [leaveError, setLeaveError] = useState('')
+  const cycle = cycleForPayMonth(genPayMonth)
+  const knownIds = new Set(employees.map(e => e.id))
+  const pendingLeaves = leaves.filter(l => l.status === 'pending' && l.startDate <= cycle.periodEnd && knownIds.has(l.employeeId))
+  const undecidedRejected = leaves.filter(l => l.status === 'rejected' && !l.lopDecision && l.startDate >= cycle.periodStart && l.startDate <= cycle.periodEnd && knownIds.has(l.employeeId))
+  const leavesToSettle = pendingLeaves.length + undecidedRejected.length
+
+  async function settleLeave(id: string, change: Partial<LeaveRequest>) {
+    setLeaveError('')
+    setLeaveBusy(true)
+    try {
+      await onLeaveUpdate(leaves.map(l => l.id === id ? { ...l, ...change } : l))
+    } catch (err) {
+      setLeaveError(err instanceof Error ? err.message : 'Could not save that decision. Please try again.')
+    } finally {
+      setLeaveBusy(false)
+    }
+  }
 
   function generatePayslip() {
     const employee = employees.find(e => e.id === genEmployeeId)
@@ -237,6 +263,18 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, onPayrollDel
         </div>
       )}
 
+      {leavesToSettle > 0 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap rounded-xl border px-4 py-3" style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+          <div className="flex items-center gap-2 text-sm" style={{ color: '#92400E' }}>
+            <AlertCircle size={16} />
+            <span><strong>{leavesToSettle}</strong> leave {leavesToSettle === 1 ? 'request needs' : 'requests need'} a decision before you generate payslips for this cycle ({cycle.periodStart} to {cycle.periodEnd}).</span>
+          </div>
+          <button onClick={() => { setLeaveError(''); setShowLeaves(true) }} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: navy }}>
+            Review leave
+          </button>
+        </div>
+      )}
+
       {/* Edit Payslip */}
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setEditing(null)}>
@@ -266,6 +304,58 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, onPayrollDel
             <button onClick={saveEdit} className="w-full mt-3 py-2.5 rounded-xl text-sm font-bold text-white transition-all" style={{ backgroundColor: navy }}>
               Save changes
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Leave to settle */}
+      {showLeaves && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowLeaves(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h4 className="font-serif text-base font-semibold text-foreground">Leave to settle</h4>
+              <button onClick={() => setShowLeaves(false)}><X size={16} className="text-muted-foreground hover:text-foreground transition-colors" /></button>
+            </div>
+            <div className="flex items-center gap-2 mb-3">
+              <label className="text-xs text-muted-foreground">Pay month</label>
+              <input type="month" value={genPayMonth} onChange={e => setGenPayMonth(e.target.value)} className="border border-border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none" />
+              <span className="text-[11px] text-muted-foreground">{cycle.periodStart} to {cycle.periodEnd}</span>
+            </div>
+            {leaveError && <p className="text-xs font-medium mb-2" style={{ color: '#DC2626' }}>{leaveError}</p>}
+
+            <p className="text-xs font-semibold mb-2" style={{ color: navy }}>Still pending ({pendingLeaves.length})</p>
+            {pendingLeaves.length === 0 ? <p className="text-xs text-muted-foreground mb-4">Nothing pending.</p> : (
+              <div className="space-y-2 mb-4">
+                {pendingLeaves.map(l => (
+                  <div key={l.id} className="border border-border rounded-xl p-3">
+                    <p className="text-sm font-semibold" style={{ color: navy }}>{l.employeeName} <span className="font-normal text-xs text-muted-foreground">· {l.type} · {l.startDate}{l.endDate !== l.startDate ? ` to ${l.endDate}` : ''} · {l.days} {l.days === 1 ? 'day' : 'days'}</span></p>
+                    <p className="text-xs text-muted-foreground italic mt-0.5">"{l.reason}"</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <button disabled={leaveBusy} onClick={() => settleLeave(l.id, { status: 'approved', pendingWith: 'done' })} className="px-3 py-1 rounded-lg text-xs font-semibold text-white disabled:opacity-50" style={{ backgroundColor: '#059669' }}>Approve</button>
+                      <button disabled={leaveBusy} onClick={() => settleLeave(l.id, { status: 'rejected', pendingWith: 'done', lopDecision: 'no-lop' })} className="px-3 py-1 rounded-lg text-xs font-semibold border border-border bg-card disabled:opacity-50">Reject only</button>
+                      <button disabled={leaveBusy} onClick={() => settleLeave(l.id, { status: 'rejected', pendingWith: 'done', lopDecision: 'lop' })} className="px-3 py-1 rounded-lg text-xs font-semibold text-white disabled:opacity-50" style={{ backgroundColor: '#DC2626' }}>Reject &amp; LOP</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <p className="text-xs font-semibold mb-1" style={{ color: navy }}>Rejected, LOP not decided ({undecidedRejected.length})</p>
+            <p className="text-[11px] text-muted-foreground mb-2">A manager rejected these. Choose whether the days are deducted.</p>
+            {undecidedRejected.length === 0 ? <p className="text-xs text-muted-foreground">Nothing to decide.</p> : (
+              <div className="space-y-2">
+                {undecidedRejected.map(l => (
+                  <div key={l.id} className="border border-border rounded-xl p-3">
+                    <p className="text-sm font-semibold" style={{ color: navy }}>{l.employeeName} <span className="font-normal text-xs text-muted-foreground">· {l.type} · {l.startDate}{l.endDate !== l.startDate ? ` to ${l.endDate}` : ''} · {l.days} {l.days === 1 ? 'day' : 'days'}</span></p>
+                    <p className="text-xs text-muted-foreground italic mt-0.5">"{l.reason}"</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <button disabled={leaveBusy} onClick={() => settleLeave(l.id, { lopDecision: 'no-lop' })} className="px-3 py-1 rounded-lg text-xs font-semibold border border-border bg-card disabled:opacity-50">No LOP</button>
+                      <button disabled={leaveBusy} onClick={() => settleLeave(l.id, { lopDecision: 'lop' })} className="px-3 py-1 rounded-lg text-xs font-semibold text-white disabled:opacity-50" style={{ backgroundColor: '#DC2626' }}>Mark as LOP</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -315,6 +405,9 @@ export default function PayrollHR({ role, payroll, onPayrollUpdate, onPayrollDel
                     className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none" />
                 </div>
               </div>
+              {genEmployeeId && leaves.some(l => l.employeeId === genEmployeeId && l.status === 'pending' && l.startDate <= cycle.periodEnd) && (
+                <p className="text-[11px] font-medium rounded-lg px-3 py-2" style={{ background: '#FFFBEB', color: '#92400E' }}>This employee still has leave waiting for a decision. Settle it first (Review leave) so the payslip is correct.</p>
+              )}
               {genError && <p className="text-xs font-medium" style={{ color: '#DC2626' }}>{genError}</p>}
               <p className="text-[11px] text-muted-foreground">The payslip goes straight to the employee and cannot be edited afterwards.</p>
               <button onClick={generatePayslip} className="w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all" style={{ backgroundColor: navy }}>

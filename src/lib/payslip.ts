@@ -104,7 +104,13 @@ export function computeAttendanceSummary(
     .filter(l => l.employeeId === employeeId && l.status === 'approved' && l.type !== 'Unpaid' && inRange(l.startDate))
     .reduce((sum, l) => sum + l.days, 0)
 
-  const lopDays = Math.max(0, Math.round((workingDays - daysPresent - paidLeave) * 10) / 10)
+  // Leave that was rejected with "just reject, no LOP": HR chose not to deduct
+  // those days, so they are excused instead of counting as loss of pay.
+  const excusedDays = leaves
+    .filter(l => l.employeeId === employeeId && l.status === 'rejected' && l.lopDecision === 'no-lop' && inRange(l.startDate))
+    .reduce((sum, l) => sum + l.days, 0)
+
+  const lopDays = Math.max(0, Math.round((workingDays - daysPresent - paidLeave - excusedDays) * 10) / 10)
   const netPaidDays = Math.max(0, monthDays - lopDays)
 
   return { monthDays, workingDays, nationalHolidays, daysPresent, paidLeave, weeklyOff, lopDays, netPaidDays }

@@ -107,7 +107,8 @@ CREATE TABLE leave_requests (
   pending_with      TEXT NOT NULL CHECK (pending_with IN ('crm', 'manager', 'hr', 'management', 'finance', 'done')),
   applied_on        TIMESTAMPTZ NOT NULL DEFAULT now(),
   decided_by        TEXT REFERENCES employees(id),
-  decided_at        TIMESTAMPTZ
+  decided_at        TIMESTAMPTZ,
+  lop_decision      TEXT CHECK (lop_decision IN ('lop', 'no-lop'))
 );
 
 CREATE INDEX idx_leave_requests_employee_id ON leave_requests(employee_id);
